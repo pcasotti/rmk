@@ -253,6 +253,11 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize>
         self.layer_cache[row][col] = layer_num;
     }
 
+    /// Get given layer state
+    pub(crate) fn get_layer_state(&self, layer_num: u8) -> bool {
+        self.layer_state[layer_num as usize]
+    }
+
     /// Activate given layer
     pub(crate) fn activate_layer(&mut self, layer_num: u8) {
         if layer_num as usize >= NUM_LAYER {

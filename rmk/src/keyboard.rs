@@ -300,6 +300,19 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize>
                     .await;
             }
         }
+
+        // Process tri layer
+        //
+        // TODO: move this out of here, not a good idea to do this every key event
+        if let Some(tri_layer) = self.options.tri_layer {
+            let upper_active = self.keymap.borrow().get_layer_state(tri_layer[0]);
+            let lower_active = self.keymap.borrow().get_layer_state(tri_layer[1]);
+            if upper_active && lower_active {
+                self.keymap.borrow_mut().activate_layer(tri_layer[2]);
+            } else {
+                self.keymap.borrow_mut().deactivate_layer(tri_layer[2]);
+            }
+        }
     }
 
     async fn update_osm(&mut self, key_event: KeyEvent) {
