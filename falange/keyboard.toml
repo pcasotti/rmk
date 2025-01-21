@@ -7,8 +7,6 @@ manufacturer = "pcasotti"
 chip = "nrf52840"
 
 [layout]
-# WARNING: Currently row2col/col2row is set in RMK's feature gate, configs here do nothing actually
-# row2col = true
 rows = 4
 cols = 10
 layers = 8
@@ -69,6 +67,7 @@ lower = 2
 adjust = 3
 
 [storage]
+# clear_storage = true
 
 [ble]
 enabled = true
