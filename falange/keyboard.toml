@@ -61,17 +61,17 @@ keymap = [
     ]
 ]
 
-[behavior.tri_layer]
-upper = 1
-lower = 2
-adjust = 3
-
 [storage]
 # clear_storage = true
 
 [ble]
 enabled = true
 battery_adc_pin = "vddh"
+
+[behavior.tri_layer]
+upper = 1
+lower = 2
+adjust = 3
 
 [split]
 connection = "ble"
@@ -98,12 +98,3 @@ ble_addr = [0x7e, 0xfe, 0x73, 0x9e, 0x66, 0xe3]
 [split.peripheral.matrix]
 input_pins = ["P0_22", "P0_24", "P1_00", "P1_04"]
 output_pins = ["P0_09", "P0_10", "P1_11", "P0_11", "P1_06"]
-
-# [[split.peripheral]]
-# rows = 2
-# cols = 1
-# row_offset = 2
-# col_offset = 2
-# serial = [{ instance = "UART0", tx_pin = "PIN_0", rx_pin = "PIN_1" }]
-# input_pins = ["PIN_9", "PIN_11"]
-# output_pins = ["PIN_10"]
