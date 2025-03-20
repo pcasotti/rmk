@@ -237,6 +237,7 @@ pub(crate) async fn run_nrf_ble_keyboard<
     keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER>>,
     storage: &mut Storage<F, ROW, COL, NUM_LAYER>,
     #[cfg(not(feature = "_no_usb"))] usb_driver: D,
+    i2c: &mut impl embedded_hal::i2c::I2c,
     light_controller: &mut LightController<Out>,
     mut rmk_config: RmkConfig<'static>,
     sd: &mut Softdevice,
@@ -302,6 +303,7 @@ pub(crate) async fn run_nrf_ble_keyboard<
                     keymap,
                     #[cfg(any(feature = "_nrf_ble", not(feature = "_no_external_storage")))]
                     storage,
+                    i2c,
                     run_usb_device(&mut usb_device),
                     light_controller,
                     UsbLedReader::new(&mut keyboard_reader),
@@ -328,6 +330,7 @@ pub(crate) async fn run_nrf_ble_keyboard<
                             run_ble_keyboard(
                                 keymap,
                                 storage,
+                                i2c,
                                 light_controller,
                                 rmk_config.vial_config,
                                 &mut rmk_config.ble_battery_config,
@@ -356,6 +359,7 @@ pub(crate) async fn run_nrf_ble_keyboard<
                         run_ble_keyboard(
                             keymap,
                             storage,
+                            i2c,
                             light_controller,
                             rmk_config.vial_config,
                             &mut rmk_config.ble_battery_config,
@@ -379,6 +383,7 @@ pub(crate) async fn run_nrf_ble_keyboard<
                 run_ble_keyboard(
                     keymap,
                     storage,
+                    i2c,
                     light_controller,
                     rmk_config.vial_config,
                     &mut rmk_config.ble_battery_config,
@@ -463,6 +468,7 @@ async fn run_ble_keyboard<
 >(
     keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER>>,
     storage: &mut Storage<F, ROW, COL, NUM_LAYER>,
+    i2c: &mut impl embedded_hal::i2c::I2c,
     light_controller: &mut LightController<Out>,
     vial_config: VialConfig<'static>,
     ble_battery_config: &mut BleBatteryConfig<'static>,
@@ -482,6 +488,7 @@ async fn run_ble_keyboard<
         run_keyboard(
             keymap,
             storage,
+            i2c,
             run_ble_server(&conn, ble_server),
             light_controller,
             BleLedReader {},

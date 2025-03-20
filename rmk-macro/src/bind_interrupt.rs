@@ -5,7 +5,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::ItemMod;
 
-use crate::config::BleConfig;
+use crate::config::{BleConfig, I2cConfig};
 use crate::keyboard_config::KeyboardConfig;
 
 // Expand `bind_interrupt!` stuffs
@@ -79,6 +79,16 @@ pub(crate) fn bind_interrupt_default(keyboard_config: &KeyboardConfig) -> TokenS
                     }
                 } else {
                     quote! { #saadc_interrupt }
+                };
+                let interrupt_binding = if let Some(I2cConfig { .. }) =
+                    keyboard_config.display.get_i2c_config()
+                {
+                    quote! {
+                        #interrupt_binding
+                        TWISPI0 => ::embassy_nrf::twim::InterruptHandler<::embassy_nrf::peripherals::TWISPI0>;
+                    }
+                } else {
+                    interrupt_binding
                 };
                 quote! {
                     use ::embassy_nrf::bind_interrupts;

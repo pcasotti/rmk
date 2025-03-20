@@ -4,8 +4,9 @@ use serde::Deserialize;
 use std::fs;
 
 use crate::config::{
-    BehaviorConfig, BleConfig, DependencyConfig, KeyboardInfo, KeyboardTomlConfig, LayoutConfig,
-    LightConfig, MatrixConfig, MatrixType, SplitConfig, StorageConfig,
+    BehaviorConfig, BleConfig, CommunicationProtocol, DependencyConfig, I2cConfig, KeyboardInfo,
+    KeyboardTomlConfig, LayoutConfig, LightConfig, MatrixConfig, MatrixType, SplitConfig,
+    StorageConfig,
 };
 use crate::{
     default_config::{
@@ -85,6 +86,34 @@ pub(crate) struct KeyboardConfig {
     pub(crate) storage: StorageConfig,
     // Dependency config
     pub(crate) dependency: DependencyConfig,
+    // Display config
+    pub(crate) display: DisplayConfig,
+}
+
+/// Pointing device config
+#[derive(Clone, Debug, Default, Deserialize)]
+#[allow(unused)]
+#[serde(deny_unknown_fields)]
+pub struct DisplayConfig {
+    pub interface: Option<CommunicationProtocol>,
+}
+
+impl DisplayConfig {
+    pub(crate) fn get_i2c_config(&self) -> Option<I2cConfig> {
+        Some(I2cConfig {
+            instance: "".to_string(),
+            sda: "P0_17".to_string(),
+            scl: "P0_20".to_string(),
+            address: 0,
+        })
+        //match &self.interface {
+        //    Some(i) => match i {
+        //        CommunicationProtocol::I2C(config) => Some(config.clone()),
+        //        CommunicationProtocol::SPI(_) => None,
+        //    },
+        //    _ => None,
+        //}
+    }
 }
 
 #[derive(Clone, Debug)]

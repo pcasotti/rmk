@@ -197,6 +197,8 @@ fn expand_main(
 
             // TODO: Initialize other devices and processors
 
+            let mut i2c = ::embassy_nrf::twim::Twim::new(p.TWISPI0, Irqs, p.P0_17, p.P0_20, ::embassy_nrf::twim::Config::default());
+
             // Start
             #run_rmk
         }
