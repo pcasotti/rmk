@@ -887,6 +887,14 @@ impl KeyCode {
         KeyCode::No <= self && self <= KeyCode::RGui
     }
 
+    pub(crate) fn is_char(self) -> bool {
+        KeyCode::A <= self && self <= KeyCode::Z
+    }
+
+    pub(crate) fn is_whitespace(self) -> bool {
+        self == KeyCode::Enter || self == KeyCode::Tab || self == KeyCode::Space
+    }
+
     /// Returns `true` if the keycode is a modifier keycode
     pub(crate) fn is_modifier(self) -> bool {
         KeyCode::LCtrl <= self && self <= KeyCode::RGui

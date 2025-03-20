@@ -29,6 +29,7 @@ use core::{
     future::Future,
     sync::atomic::{AtomicBool, AtomicU8},
 };
+use display::DisplayService;
 use embassy_futures::select::{select, select4, Either4};
 #[cfg(not(any(cortex_m)))]
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex as RawMutex;
@@ -72,6 +73,7 @@ pub mod combo;
 pub mod config;
 pub mod debounce;
 pub mod direct_pin;
+pub mod display;
 pub mod event;
 pub mod hid;
 pub mod input_device;
@@ -131,6 +133,7 @@ pub async fn run_rmk<
 >(
     keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER>>,
     #[cfg(not(feature = "_no_usb"))] usb_driver: D,
+    mut i2c: impl embedded_hal::i2c::I2c,
     mut storage: Storage<F, ROW, COL, NUM_LAYER>,
     mut light_controller: LightController<Out>,
     rmk_config: RmkConfig<'static>,
@@ -143,6 +146,7 @@ pub async fn run_rmk<
         &mut storage,
         #[cfg(not(feature = "_no_usb"))]
         usb_driver,
+        &mut i2c,
         &mut light_controller,
         rmk_config,
         sd,
@@ -208,6 +212,7 @@ pub(crate) async fn run_keyboard<
 >(
     keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER>>,
     storage: &mut Storage<F, ROW, COL, NUM_LAYER>,
+    i2c: &mut impl embedded_hal::i2c::I2c,
     communication_task: Fu,
     light_controller: &mut LightController<Out>,
     led_reader: R,
@@ -220,9 +225,11 @@ pub(crate) async fn run_keyboard<
     let writer_fut = keyboard_writer.run_writer();
     let mut light_service = LightService::new(light_controller, led_reader);
     let mut vial_service = VialService::new(keymap, vial_config, vial_reader_writer);
+    let mut display_service = DisplayService::new(i2c);
 
     let led_fut = light_service.run();
     let via_fut = vial_service.run();
+    let display_fut = display_service.run();
 
     #[cfg(any(feature = "_ble", not(feature = "_no_external_storage")))]
     let storage_fut = storage.run();
@@ -233,14 +240,14 @@ pub(crate) async fn run_keyboard<
         select(storage_fut, via_fut),
         #[cfg(all(not(feature = "_ble"), feature = "_no_external_storage"))]
         via_fut,
-        led_fut,
+        select(led_fut, display_fut),
         writer_fut,
     )
     .await
     {
         Either4::First(_) => error!("Communication or keyboard task has died"),
         Either4::Second(_) => error!("Storage or vial task has died"),
-        Either4::Third(_) => error!("Led task has died"),
+        Either4::Third(_) => error!("Led or display task has died"),
         Either4::Fourth(_) => error!("Matrix or writer task has died"),
     }
 

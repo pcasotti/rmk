@@ -1,7 +1,8 @@
 use crate::boot;
-use crate::channel::{KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL};
+use crate::channel::{INFO_REPORT_CHANNEL, KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL};
 use crate::combo::{Combo, COMBO_MAX_LENGTH};
 use crate::config::BehaviorConfig;
+use crate::display::PeripheralCallback;
 use crate::event::KeyEvent;
 use crate::hid::Report;
 use crate::input_device::Runnable;
@@ -200,6 +201,9 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize>
         } else {
             self.process_key_action(key_action, key_event).await;
         }
+
+        let _ = INFO_REPORT_CHANNEL.try_send(PeripheralCallback::KeyEvent(key_event));
+        let _ = INFO_REPORT_CHANNEL.try_send(PeripheralCallback::Layer(self.keymap.borrow().get_activated_layer()));
     }
 
     pub(crate) async fn send_keyboard_report(&mut self) {

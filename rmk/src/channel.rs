@@ -1,5 +1,6 @@
 //! Exposed channels which can be used to share data across devices & processors
 //!
+use crate::display::PeripheralCallback;
 use crate::RawMutex;
 pub use embassy_sync::blocking_mutex;
 pub use embassy_sync::channel;
@@ -25,6 +26,8 @@ pub static KEY_EVENT_CHANNEL: Channel<RawMutex, KeyEvent, EVENT_CHANNEL_SIZE> = 
 pub static EVENT_CHANNEL: Channel<RawMutex, Event, EVENT_CHANNEL_SIZE> = Channel::new();
 /// Channel for keyboard report from input processors to hid writer/reader
 pub static KEYBOARD_REPORT_CHANNEL: Channel<RawMutex, Report, REPORT_CHANNEL_SIZE> = Channel::new();
+/// Channel for keyboard report from input processors to output peripherals
+pub static INFO_REPORT_CHANNEL: Channel<RawMutex, PeripheralCallback, REPORT_CHANNEL_SIZE> = Channel::new();
 /// Channel for reading vial reports from the host
 pub(crate) static VIAL_READ_CHANNEL: Channel<RawMutex, [u8; 32], 4> = Channel::new();
 // Sync messages from server to flash
