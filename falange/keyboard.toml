@@ -77,14 +77,25 @@ adjust = 3
 connection = "ble"
 
 [split.central]
-rows = 4
-cols = 5
+rows = 1
+cols = 1
 row_offset = 0
 col_offset = 0
 ble_addr = [0x18, 0xe2, 0x21, 0x80, 0xc0, 0xc7]
 
 [split.central.matrix]
 matrix_type = "normal"
+input_pins = ["P0_22"]
+output_pins = ["P0_09"]
+
+[[split.peripheral]]
+rows = 4
+cols = 5
+row_offset = 0
+col_offset = 0
+ble_addr = [0x7e, 0xfe, 0x73, 0x9e, 0x66, 0xe3]
+
+[split.peripheral.matrix]
 input_pins = ["P0_22", "P0_24", "P1_00", "P1_04"]
 output_pins = ["P0_09", "P0_10", "P1_11", "P0_11", "P1_06"]
 
@@ -93,7 +104,7 @@ rows = 4
 cols = 5
 row_offset = 0
 col_offset = 5
-ble_addr = [0x7e, 0xfe, 0x73, 0x9e, 0x66, 0xe3]
+ble_addr = [0x8e, 0xfe, 0x73, 0x9e, 0x66, 0xe4]
 
 [split.peripheral.matrix]
 input_pins = ["P0_22", "P0_24", "P1_00", "P1_04"]

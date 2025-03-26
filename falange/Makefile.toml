@@ -22,7 +22,7 @@ args = [
 ]
 dependencies = ["install-llvm-tools", "flip-link"]
 
-[tasks.objcopy-peripheral]
+[tasks.objcopy-peripheral-left]
 # install_crate = { crate_name = "cargo-binutils", binary = "cargo", test_arg = [
 #     "objcopy",
 #     "--help",
@@ -32,11 +32,29 @@ args = [
     "objcopy",
     "--release",
     "--bin",
-    "peripheral",
+    "peripheral_left",
     "--",
     "-O",
     "ihex",
-    "rmk-peripheral.hex",
+    "rmk-peripheral-left.hex",
+]
+dependencies = ["install-llvm-tools", "flip-link"]
+
+[tasks.objcopy-peripheral-right]
+# install_crate = { crate_name = "cargo-binutils", binary = "cargo", test_arg = [
+#     "objcopy",
+#     "--help",
+# ] }
+command = "cargo"
+args = [
+    "objcopy",
+    "--release",
+    "--bin",
+    "peripheral_right",
+    "--",
+    "-O",
+    "ihex",
+    "rmk-peripheral-right.hex",
 ]
 dependencies = ["install-llvm-tools", "flip-link"]
 
@@ -57,7 +75,7 @@ args = [
 ]
 dependencies = ["objcopy-central"]
 
-[tasks.uf2-peripheral]
+[tasks.uf2-peripheral-left]
 install_crate = { crate_name = "cargo-hex-to-uf2", binary = "cargo", test_arg = [
     "hex-to-uf2",
     "--help",
@@ -66,13 +84,30 @@ command = "cargo"
 args = [
     "hex-to-uf2",
     "--input-path",
-    "rmk-peripheral.hex",
+    "rmk-peripheral-left.hex",
     "--output-path",
-    "rmk-peripheral.uf2",
+    "rmk-peripheral-left.uf2",
     "--family",
     "nrf52840",
 ]
-dependencies = ["objcopy-peripheral"]
+dependencies = ["objcopy-peripheral-left"]
+
+[tasks.uf2-peripheral-right]
+install_crate = { crate_name = "cargo-hex-to-uf2", binary = "cargo", test_arg = [
+    "hex-to-uf2",
+    "--help",
+] }
+command = "cargo"
+args = [
+    "hex-to-uf2",
+    "--input-path",
+    "rmk-peripheral-right.hex",
+    "--output-path",
+    "rmk-peripheral-right.uf2",
+    "--family",
+    "nrf52840",
+]
+dependencies = ["objcopy-peripheral-right"]
 
 [tasks.uf2]
-dependencies = ["uf2-central", "uf2-peripheral"]
+dependencies = ["uf2-central", "uf2-peripheral-left", "uf2-peripheral-right"]

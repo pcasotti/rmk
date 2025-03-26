@@ -51,8 +51,12 @@ name = "central"
 path = "src/central.rs"
 
 [[bin]]
-name = "peripheral"
-path = "src/peripheral.rs"
+name = "peripheral_left"
+path = "src/peripheral_left.rs"
+
+[[bin]]
+name = "peripheral_right"
+path = "src/peripheral_right.rs"
 
 [profile.dev]
 codegen-units = 1      # better optimizations
