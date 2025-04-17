@@ -43,10 +43,20 @@ usb_enable = true
 
 ### `[matrix]`
 
-`[matrix]` section defines the key matrix information of the keyboard, aka input/output pins. 
+`[matrix]` section defines the [key matrix](https://docs.qmk.fm/how_a_matrix_works) information of the keyboard, aka input/output pins. 
 
 <div class="warning">
 For split keyboard, this section should be just ignored, the matrix IO pins for split keyboard are defined in `[split]` section.
+</div>
+
+In order to identify the IO pins take a look at your keyboard's schematic: The pin going to the [diode](https://en.wikipedia.org/wiki/Diode) (called anode) is an output pin, the pin coming out (called cathode) is an input pin:
+```
+output_pin =>   >|   => input_pin
+                 ↑
+              diode(be aware of it's direction)
+```
+<div class="warning">
+Per default RMK assumes that your pins are `col2row`, meaning that the output pins (anodes) represent the columns and the input pins (cathodes) represent the rows. If your schemata shows the opposite you need to [change the configuration to `row2col`](https://haobogu.github.io/rmk/faq.html#my-matrix-is-row2col-the-matrix-doesnt-work)
 </div>
 
 IO pins are represented with an array of string, the string value should be the **GPIO peripheral name** of the chip. For example, if you're using stm32h750xb, you can go to <https://docs.embassy.dev/embassy-stm32/git/stm32h750xb/peripherals/index.html> to get the valid GPIO peripheral name:
@@ -139,9 +149,12 @@ The key string should follow several rules:
     For example, if you set a keycode `"Backspace"`, it will be turned to `KeyCode::Backspace`. So you have to ensure that the keycode string is valid, or RMK wouldn't compile!
 
     For simple keycodes with modifiers active, you can use `WM(key, modifier)` to create a keypress with modifier action. Modifiers can be chained together like `LShift | RGui` to have multiple modifiers active.
-2. For no-key, use `"__"`
 
-3. RMK supports many advanced layer operations:
+2. For no-key (`KeyAction::No`), use `"No"`
+
+3. For transparent key (`KeyAction::Transparent`), use `"_"` or `"__"` (you can put any number of `_`)
+
+4. RMK supports many advanced layer operations:
     1. Use `"DF(n)"` to create a switch default layer actiov, `n` is the layer number
     2. Use `"MO(n)"` to create a layer activate action, `n` is the layer number
     3. Use `"LM(n, modifier)"` to create layer activate with modifier action. The modifier can be chained in the same way as `WM`
@@ -154,9 +167,11 @@ The key string should follow several rules:
 
   The definitions of those operations are same with QMK, you can found [here](https://docs.qmk.fm/#/feature_layers). If you want other actions, please [fire an issue](https://github.com/HaoboGu/rmk/issues/new).
 
-4. For modifier-tap-hold, use `MT(key, modifier)` where the modifier can be a chain like explained on point 1. For example for a Home row modifier config you can use `MT(F,LShift)`
+5. For modifier-tap-hold, use `MT(key, modifier)` where the modifier can be a chain like explained on point 1. For example for a Home row modifier config you can use `MT(F,LShift)`
 
-5. For generic key tap-hold, use `TH(key-tap, key-hold)`.
+6. For generic key tap-hold, use `TH(key-tap, key-hold)`
+
+7. For shifted key, use `SHIFTED(key)`
 
 ### `[behavior]`
 
@@ -237,6 +252,77 @@ combos = [
   { actions = ["A", "S", "D"], output = "TO(2)" }
 ]
 ```
+
+#### Fork
+
+In the `fork` sub-table, you can configure the keyboard's state based key fork functionality. Forks allows you to define a trigger key and condition dependent possible replacement keys. When the trigger key is pressed, the condition is checked by the following rule:
+If any of the `match_any` states are active AND none of the `match_none` states active, the trigger key will be replaced with positive_output, otherwise with the negative_output. By default the modifiers listed in `match_any` will be suppressed (even the one-shot modifiers) for the time the replacement key action is executed. However with `kept_modifiers` some of them can be kept instead of automatic suppression.
+
+Fork configuration includes the following parameters:
+
+- `forks`: An array containing all defined forks. Each fork configuration is an object containing the following attributes:
+  - `trigger`: Defines the triggering key.
+  - `negative_output`: A string defining the output action to be triggered when the conditions are not met
+  - `positive_output`: A string defining the output action to be triggered when the conditions are met
+  - `match_any`: A strings defining a combination of modifier keys, lock leds, mouse buttons (optional)
+  - `match_none`: A strings defining a combination of modifier keys, lock leds, mouse buttons (optional)
+  - `kept_modifiers`: A strings defining a combination of modifier keys, which should not be 'suppressed' form the keyboard state for the time the replacement action is executed. (optional)
+  - `bindable`: Enables the evaluation of not yet triggered forks on the output of this fork to further manipulate the output. Advanced use cases can be solved using this option. (optional)
+  
+For `match_any`, `match_none` the legal values are listed below (many values may be combined with "|"): 
+  - `LShift`, `LCtrl`, `LAlt`, `LGui`, `RShift`, `RCtrl`, `RAlt`, `RGui` (these are including the effect of explicitly held and one-shot modifiers too) 
+  - `CapsLock`, `ScrollLock`, `NumLock`, `Compose`, `Kana`
+  - `MouseBtn1` .. `MouseBtn8`
+
+Here is a sample of fork configuration with random examples:
+
+```toml
+[behavior.fork]
+forks = [
+  # Shift + '.' output ':' key
+  { trigger = "Dot", negative_output = "Dot", positive_output = "WM(Semicolon, LShift)", match_any = "LShift|RShift" },
+
+  # Shift + ',' output ';' key but only if no Alt is pressed
+  { trigger = "Comma", negative_output = "Comma", positive_output = "Semicolon", match_any = "LShift|RShift", match_none = "LAlt|RAlt" },  
+  
+  # left bracket outputs by default '{', with shifts pressed outputs '['  
+  { trigger = "LeftBracket", negative_output = "WM(LeftBracket, LShift)", positive_output = "LeftBracket", match_any = "LShift|RShift" },
+
+  # Flip the effect of shift on 'x'/'X'
+  { trigger = "X", negative_output = "WM(X, LShift)", positive_output = "X", match_any = "LShift|RShift" },
+
+  # F24 usually outputs 'a', except when Left Shift or Ctrl pressed, in that case triggers a macro 
+  { trigger = "F24", negative_output = "A", positive_output = "Macro1", match_any = "LShift|LCtrl" },
+
+  # Swap Z and Y keys if MouseBtn1 is pressed (on the keyboard) (Note that these must not be bindable to avoid infinite fork loops!) 
+  { trigger = "Y", negative_output = "Y", positive_output = "Z", match_any = "MouseBtn1", bindable = false },
+  { trigger = "Z", negative_output = "Z", positive_output = "Y", match_any = "MouseBtn1", bindable = false },
+
+  # Shift + Backspace output Delete key (inside a layer tap/hold)
+  { trigger = "LT(2,Backspace)", negative_output = "LT(2,Backspace)", positive_output = "LT(2,Delete)", match_any = "LShift|RShift" },
+
+  # Ctrl + play/pause will send next track. MediaPlayPause -> MediaNextTrack
+  # Ctrl + Shift + play/pause will send previous track. MediaPlayPause -> MediaPrevTrack
+  # Alt + play/pause will send volume up. MediaPlayPause -> AudioVolUp
+  # Alt + Shift + play/pause will send volume down. MediaPlayPause -> AudioVolDown
+  # Ctrl + Alt + play/pause will send brightness up. MediaPlayPause -> BrightnessUp
+  # Ctrl + Alt + Shift + play/pause will send brightness down. MediaPlayPause -> BrightnessDown
+  # ( Note that the trigger and immediate trigger keys of the fork chain could be 'virtual keys', 
+  #   which will never output, like F23, but here multiple overrides demonstrated.)
+    { trigger = "MediaPlayPause", negative_output = "MediaPlayPause", positive_output = "MediaNextTrack", match_any = "LCtrl|RCtrl", bindable = true },
+  { trigger = "MediaNextTrack", negative_output = "MediaNextTrack", positive_output = "BrightnessUp", match_any = "LAlt|RAlt", bindable = true },
+  { trigger = "BrightnessUp", negative_output = "BrightnessUp", positive_output = "BrightnessDown", match_any = "LShift|RShift", bindable = false },
+  { trigger = "MediaNextTrack", negative_output = "MediaNextTrack", positive_output = "MediaPrevTrack", match_any = "LShift|RShift", match_none = "LAlt|RAlt", bindable = false},
+  { trigger = "MediaPlayPause", negative_output = "MediaPlayPause", positive_output = "AudioVolUp", match_any = "LAlt|RAlt", match_none = "LCtrl|RCtrl", bindable = true },
+  { trigger = "AudioVolUp", negative_output = "AudioVolUp", positive_output = "AudioVolDown", match_any = "LShift|RShift", match_none = "LCtrl|RCtrl", bindable = false } 
+]
+```
+
+Please note that the processing of forks happen after combos and before others, so the trigger key must be the one listed in your keymap (or combo output).
+For example if `LT(2,Backspace)` is in your keymap, then trigger = `Backspace` will NOT work, you should "replace" the full key and use `trigger = "LT(2,Backspace)` instead, like in the last example above.
+You may want to include `F24` or similar dummy keys in your keymap, and use them as trigger for your pre-configured forks, such as Shift/CapsLock dependent macros to enter unicode characters of your language.
+
+Vial does not support fork configuration yet.
 
 ### `[light]`
 

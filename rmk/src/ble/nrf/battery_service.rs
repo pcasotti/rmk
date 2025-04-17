@@ -1,4 +1,5 @@
 use crate::config::BleBatteryConfig;
+use core::sync::atomic::{AtomicU8, Ordering};
 use embassy_time::Timer;
 use nrf_softdevice::ble::Connection;
 
@@ -9,31 +10,10 @@ pub(crate) struct BatteryService {
     battery_level: u8,
 }
 
-impl<'a> BatteryService {
-    fn check_charging_state(battery_config: &mut BleBatteryConfig<'a>) {
-        if let Some(ref is_charging_pin) = battery_config.charge_state_pin {
-            if is_charging_pin.is_low() == battery_config.charge_state_low_active {
-                info!("Charging!");
-                if let Some(ref mut charge_led) = battery_config.charge_led_pin {
-                    if battery_config.charge_led_low_active {
-                        charge_led.set_low()
-                    } else {
-                        charge_led.set_high()
-                    }
-                }
-            } else {
-                info!("Not charging!");
-                if let Some(ref mut charge_led) = battery_config.charge_led_pin {
-                    if battery_config.charge_led_low_active {
-                        charge_led.set_high()
-                    } else {
-                        charge_led.set_low()
-                    }
-                }
-            }
-        }
-    }
+// Global static variable, store the current battery level
+static CURRENT_BATTERY_LEVEL: AtomicU8 = AtomicU8::new(255);
 
+impl<'a> BatteryService {
     pub(crate) async fn run(
         &mut self,
         battery_config: &mut BleBatteryConfig<'a>,
@@ -41,31 +21,35 @@ impl<'a> BatteryService {
     ) {
         // Wait 1 seconds, ensure that gatt server has been started
         Timer::after_secs(1).await;
-        BatteryService::check_charging_state(battery_config);
 
-        loop {
-            if let Some(ref mut saadc) = battery_config.saadc {
-                let mut buf = [0i16; 1];
-                saadc.sample(&mut buf).await;
-                // We only sampled one ADC channel.
-                let val: u8 = self.get_battery_percent(buf[0], battery_config);
-                match self.battery_level_notify(conn, &val) {
-                    Ok(_) => info!("Battery value: {}", val),
-                    Err(e) => match self.battery_level_set(&val) {
-                        Ok(_) => info!("Battery value set: {}", val),
-                        Err(e2) => error!("Battery value notify error: {}, set error: {}", e, e2),
-                    },
-                }
-                if val < 10 {
-                    // The battery is low, blink the led!
-                    if let Some(ref mut charge_led) = battery_config.charge_led_pin {
-                        charge_led.toggle();
-                    }
-                    Timer::after_secs(200).await;
-                    continue;
+        let battery_led_control = async {
+            loop {
+                // Read the current battery level
+                let current_battery_level = CURRENT_BATTERY_LEVEL.load(Ordering::Relaxed);
+
+                // Check if the device is charging
+                let is_charging = if let Some(ref is_charging_pin) = battery_config.charge_state_pin
+                {
+                    is_charging_pin.is_low() == battery_config.charge_state_low_active
                 } else {
-                    // Turn off the led
-                    if let Some(ref mut charge_led) = battery_config.charge_led_pin {
+                    false
+                };
+
+                // Control the LED based on the charging state and battery level
+                if let Some(ref mut charge_led) = battery_config.charge_led_pin {
+                    if is_charging {
+                        // If the device is charging, the LED is always on
+                        if battery_config.charge_led_low_active {
+                            charge_led.set_low();
+                        } else {
+                            charge_led.set_high();
+                        }
+                    } else if current_battery_level < 50 {
+                        // If the device is not charging and the battery level is less than 10%, the LED will blink
+                        charge_led.toggle();
+                        Timer::after_millis(200).await;
+                    } else {
+                        // If the device is not charging and the battery level is greater than 10%, the LED is always off
                         if battery_config.charge_led_low_active {
                             charge_led.set_high();
                         } else {
@@ -73,52 +57,31 @@ impl<'a> BatteryService {
                         }
                     }
                 }
-            } else {
-                // No SAADC, skip battery check
-                Timer::after_secs(u32::MAX as u64).await;
+
+                // If there is no blinking operation, wait for a while before checking again
+                if !(is_charging == false && current_battery_level < 10) {
+                    Timer::after_secs(30).await;
+                }
             }
+        };
 
-            // Check charging state
-            BatteryService::check_charging_state(battery_config);
+        let report_battery_level = async {
+            loop {
+                let val = crate::channel::BATTERY_LEVEL_SIGNAL.wait().await;
 
-            // Sample every 120s
-            Timer::after_secs(120).await
-        }
-    }
+                // Update the battery level
+                CURRENT_BATTERY_LEVEL.store(val, Ordering::Relaxed);
 
-    fn get_battery_percent(&self, val: i16, battery_config: &BleBatteryConfig<'a>) -> u8 {
-        info!("Detected adc value: {:?}", val);
-        // Avoid overflow
-        let val = val as i32;
+                match self.battery_level_notify(conn, &val) {
+                    Ok(_) => info!("Battery value: {}", val),
+                    Err(e) => match self.battery_level_set(&val) {
+                        Ok(_) => info!("Battery value set: {}", val),
+                        Err(e2) => error!("Battery value notify error: {}, set error: {}", e, e2),
+                    },
+                }
+            }
+        };
 
-        // According to nRF52840's datasheet, for single_ended saadc:
-        // val = v_adc * (gain / reference) * 2^(resolution)
-        //
-        // When using default setting, gain = 1/6, reference = 0.6v, resolution = 12bits, so:
-        // val = v_adc * 1137.8
-        //
-        // For example, rmk-ble-keyboard uses two resistors 820K and 2M adjusting the v_adc, then,
-        // v_adc = v_bat * measured / total => val = v_bat * 1137.8 * measured / total
-        //
-        // If the battery voltage range is 3.6v ~ 4.2v, the adc val range should be (4096 ~ 4755) * measured / total
-        let mut measured = battery_config.adc_divider_measured as i32;
-        let mut total = battery_config.adc_divider_total as i32;
-        if 500 < val && val < 1000 {
-            // Thing becomes different when using vddh as reference
-            // The adc value for vddh pin is actually vddh/5,
-            // so we use this rough range to detect vddh
-            measured = 1;
-            total = 5;
-        }
-        if val > 4755_i32 * measured / total {
-            // 4755 ~= 4.2v * 1137.8
-            100_u8
-        } else if val < 4055_i32 * measured / total {
-            // 4096 ~= 3.6v * 1137.8
-            // To simplify the calculation, we use 4055 here
-            0_u8
-        } else {
-            ((val * total / measured - 4055) / 7) as u8
-        }
+        embassy_futures::join::join(battery_led_control, report_battery_level).await;
     }
 }

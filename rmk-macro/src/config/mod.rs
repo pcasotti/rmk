@@ -148,6 +148,7 @@ pub struct BehaviorConfig {
     pub tap_hold: Option<TapHoldConfig>,
     pub one_shot: Option<OneShotConfig>,
     pub combo: Option<CombosConfig>,
+    pub fork: Option<ForksConfig>,
 }
 
 /// Configurations for tap hold
@@ -190,6 +191,25 @@ pub struct ComboConfig {
     pub actions: Vec<String>,
     pub output: String,
     pub layer: Option<u8>,
+}
+
+/// Configurations for forks
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ForksConfig {
+    pub forks: Vec<ForkConfig>,
+}
+
+/// Configurations for fork
+#[derive(Clone, Debug, Deserialize)]
+pub struct ForkConfig {
+    pub trigger: String,
+    pub negative_output: String,
+    pub positive_output: String,
+    pub match_any: Option<String>,
+    pub match_none: Option<String>,
+    pub kept_modifiers: Option<String>,
+    pub bindable: Option<bool>,
 }
 
 /// Configurations for split keyboards
@@ -273,6 +293,24 @@ fn parse_duration_millis<'de, D: de::Deserializer<'de>>(deserializer: D) -> Resu
 pub struct InputDeviceConfig {
     pub encoder: Option<Vec<EncoderConfig>>,
     pub pointing: Option<Vec<PointingDeviceConfig>>,
+    pub joystick: Option<Vec<JoystickConfig>>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[allow(unused)]
+#[serde(deny_unknown_fields)]
+pub struct JoystickConfig {
+    // Name of the joystick
+    pub name: String,
+    // Pin a of the joystick
+    pub pin_x: String,
+    // Pin b of the joystick
+    pub pin_y: String,
+    // Pin z of the joystick
+    pub pin_z: String,
+    pub transform: Vec<Vec<i16>>,
+    pub bias: Vec<i16>,
+    pub resolution: u16,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -283,13 +321,19 @@ pub struct EncoderConfig {
     pub pin_a: String,
     // Pin b of the encoder
     pub pin_b: String,
-    // Press button position in the keyboard matrix
-    // TODO: direct pin support?
-    pub btn_pos: Option<(u8, u8)>,
+    // Phase is the working mode of the rotary encoders.
+    // Available mode:
+    // - default: EC11 compatible, resolution = 1
+    // - e8h7: resolution = 2, reverse = true
+    // - resolution: customized resolution, the resolution value and reverse should be specified
+    pub phase: Option<String>,
     // Resolution
     pub resolution: Option<u8>,
-    pub clockwise_pos: (u8, u8),
-    pub counter_clockwise_pos: (u8, u8),
+    // Whether the direction of the rotary encoder is reversed.
+    pub reverse: Option<bool>,
+    // Use MCU's internal pull-up resistor or not
+    #[serde(default = "default_false")]
+    pub internal_pullup: bool,
 }
 
 /// Pointing device config

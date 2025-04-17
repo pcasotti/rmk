@@ -13,12 +13,14 @@ use embassy_sync::channel::Channel;
 use embassy_time::Duration;
 use embedded_hal::digital::OutputPin;
 
+#[cfg(feature = "storage")]
+use crate::storage::FlashOperationMessage;
 use crate::{
     combo::{Combo, COMBO_MAX_NUM},
     event::{Event, KeyEvent},
+    fork::{Fork, FORK_MAX_NUM},
     hid::Report,
     light::LedIndicator,
-    storage::FlashOperationMessage,
     RawMutex,
 };
 
@@ -53,6 +55,7 @@ pub struct ChannelConfig<
     pub key_event_channel: Channel<RawMutex, KeyEvent, KEY_EVENT_CHANNEL_SIZE>,
     pub event_channel: Channel<RawMutex, Event, EVENT_CHANNEL_SIZE>,
     pub keyboard_report_channel: Channel<RawMutex, Report, REPORT_CHANNEL_SIZE>,
+    #[cfg(feature = "storage")]
     pub(crate) flash_channel: Channel<RawMutex, FlashOperationMessage, 4>,
     pub(crate) led_channel: Channel<RawMutex, LedIndicator, 4>,
     pub(crate) vial_read_channel: Channel<RawMutex, [u8; 32], 4>,
@@ -69,6 +72,7 @@ impl<
             key_event_channel: Channel::new(),
             event_channel: Channel::new(),
             keyboard_report_channel: Channel::new(),
+            #[cfg(feature = "storage")]
             flash_channel: Channel::new(),
             led_channel: Channel::new(),
             vial_read_channel: Channel::new(),
@@ -123,6 +127,7 @@ pub struct BehaviorConfig {
     pub tap_hold: TapHoldConfig,
     pub one_shot: OneShotConfig,
     pub combo: CombosConfig,
+    pub fork: ForksConfig,
 }
 
 /// Configurations for tap hold behavior
@@ -172,6 +177,18 @@ impl Default for CombosConfig {
             timeout: Duration::from_millis(50),
             combos: Vec::new(),
         }
+    }
+}
+
+/// Config for fork behavior
+#[derive(Clone, Debug)]
+pub struct ForksConfig {
+    pub forks: Vec<Fork, FORK_MAX_NUM>,
+}
+
+impl Default for ForksConfig {
+    fn default() -> Self {
+        Self { forks: Vec::new() }
     }
 }
 

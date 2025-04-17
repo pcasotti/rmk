@@ -6,6 +6,9 @@ use core::cell::RefCell;
 
 use crate::{channel::KEYBOARD_REPORT_CHANNEL, event::Event, hid::Report, keymap::KeyMap};
 
+pub mod adc;
+pub mod battery;
+pub mod joystick;
 pub mod rotary_encoder;
 
 /// The trait for runnable input devices and processors.
@@ -64,13 +67,20 @@ pub enum ProcessResult {
 /// Take the normal keyboard as the example:
 ///
 /// The [`crate::matrix::Matrix`] is actually an input device and the [`crate::keyboard::Keyboard`] is actually an input processor.
-pub trait InputProcessor<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize> {
+pub trait InputProcessor<
+    'a,
+    const ROW: usize,
+    const COL: usize,
+    const NUM_LAYER: usize,
+    const NUM_ENCODER: usize = 0,
+>
+{
     /// Process the incoming events, convert them to HID report [`Report`],
     /// then send the report to the USB/BLE.
     ///
     /// Note there might be mulitple HID reports are generated for one event,
     /// so the "sending report" operation should be done in the `process` method.
-    /// The input processor implementor should be aware of this.  
+    /// The input processor implementor should be aware of this.
     async fn process(&mut self, event: Event) -> ProcessResult;
 
     /// Send the processed report.
@@ -79,7 +89,7 @@ pub trait InputProcessor<'a, const ROW: usize, const COL: usize, const NUM_LAYER
     }
 
     /// Get the current keymap
-    fn get_keymap(&self) -> &RefCell<KeyMap<'a, ROW, COL, NUM_LAYER>>;
+    fn get_keymap(&self) -> &RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>;
 }
 
 /// Macro to bind input devices to event channels and run all of them.
