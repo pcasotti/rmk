@@ -1,26 +1,26 @@
+use core::cell::RefCell;
+
+use embassy_futures::select::{select, Either};
+use embassy_futures::yield_now;
+use embassy_time::{Instant, Timer};
+use heapless::{Deque, FnvIndexMap, Vec};
+use usbd_hid::descriptor::{MediaKeyboardReport, MouseReport, SystemControlReport};
+
+use crate::action::{Action, KeyAction};
 use crate::boot;
 use crate::channel::{KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL};
 use crate::combo::{Combo, COMBO_MAX_LENGTH};
 use crate::config::BehaviorConfig;
 use crate::event::KeyEvent;
+use crate::fork::{ActiveFork, StateBits, FORK_MAX_NUM};
 use crate::hid::Report;
+use crate::hid_state::{HidModifiers, HidMouseButtons};
 use crate::input_device::Runnable;
-use crate::usb::descriptor::KeyboardReport;
-use crate::{
-    action::{Action, KeyAction},
-    fork::{ActiveFork, StateBits, FORK_MAX_NUM},
-    hid_state::{HidModifiers, HidMouseButtons},
-    keyboard_macro::{MacroOperation, NUM_MACRO},
-    keycode::{KeyCode, ModifierCombination},
-    keymap::KeyMap,
-    light::LedIndicator,
-    usb::descriptor::ViaReport,
-};
-use core::cell::RefCell;
-use embassy_futures::{select::select, yield_now};
-use embassy_time::{Instant, Timer};
-use heapless::{Deque, FnvIndexMap, Vec};
-use usbd_hid::descriptor::{MediaKeyboardReport, MouseReport, SystemControlReport};
+use crate::keyboard_macro::{MacroOperation, NUM_MACRO};
+use crate::keycode::{KeyCode, ModifierCombination};
+use crate::keymap::KeyMap;
+use crate::light::LedIndicator;
+use crate::usb::descriptor::{KeyboardReport, ViaReport};
 
 /// State machine for one shot keys
 #[derive(Default)]
@@ -74,16 +74,9 @@ impl<const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_ENCOD
 
 /// led states for the keyboard hid report (its value is received by by the light service in a hid report)
 /// LedIndicator type would be nicer, but that does not have const expr constructor
-pub(crate) static LOCK_LED_STATES: core::sync::atomic::AtomicU8 =
-    core::sync::atomic::AtomicU8::new(0u8);
+pub(crate) static LOCK_LED_STATES: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0u8);
 
-pub struct Keyboard<
-    'a,
-    const ROW: usize,
-    const COL: usize,
-    const NUM_LAYER: usize,
-    const NUM_ENCODER: usize = 0,
-> {
+pub struct Keyboard<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_ENCODER: usize = 0> {
     /// Keymap
     pub(crate) keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
 
@@ -163,10 +156,7 @@ pub struct Keyboard<
 impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_ENCODER: usize>
     Keyboard<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>
 {
-    pub fn new(
-        keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
-        behavior: BehaviorConfig,
-    ) -> Self {
+    pub fn new(keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>, behavior: BehaviorConfig) -> Self {
         Keyboard {
             keymap,
             timer: [[None; ROW]; COL],
@@ -226,17 +216,11 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         }
 
         // Process key
-        let key_action = self
-            .keymap
-            .borrow_mut()
-            .get_action_with_layer_cache(key_event);
+        let key_action = self.keymap.borrow_mut().get_action_with_layer_cache(key_event);
 
         if self.combo_on {
             if let Some(key_action) = self.process_combo(key_action, key_event).await {
-                debug!(
-                    "Process key action after combo: {:?}, {:?}",
-                    key_action, key_event
-                );
+                debug!("Process key action after combo: {:?}, {:?}", key_action, key_event);
                 self.process_key_action(key_action, key_event).await;
             }
         } else {
@@ -270,8 +254,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
     /// Send media report if needed
     pub(crate) async fn send_media_report(&mut self) {
-        self.send_report(Report::MediaKeyboardReport(self.media_report))
-            .await;
+        self.send_report(Report::MediaKeyboardReport(self.media_report)).await;
         self.media_report.usage_id = 0;
         yield_now().await;
     }
@@ -279,8 +262,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     /// Send mouse report if needed
     pub(crate) async fn send_mouse_report(&mut self) {
         // Prevent mouse report flooding, set maximum mouse report rate to 50 HZ
-        self.send_report(Report::MouseReport(self.mouse_report))
-            .await;
+        self.send_report(Report::MouseReport(self.mouse_report)).await;
         yield_now().await;
     }
 
@@ -315,18 +297,13 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         match key_action {
             KeyAction::No | KeyAction::Transparent => (),
             KeyAction::Single(a) => self.process_key_action_normal(a, key_event).await,
-            KeyAction::WithModifier(a, m) => {
-                self.process_key_action_with_modifier(a, m, key_event).await
-            }
+            KeyAction::WithModifier(a, m) => self.process_key_action_with_modifier(a, m, key_event).await,
             KeyAction::Tap(a) => self.process_key_action_tap(a, key_event).await,
             KeyAction::TapHold(tap_action, hold_action) => {
                 self.process_key_action_tap_hold(tap_action, hold_action, key_event)
                     .await;
             }
-            KeyAction::OneShot(oneshot_action) => {
-                self.process_key_action_oneshot(oneshot_action, key_event)
-                    .await
-            }
+            KeyAction::OneShot(oneshot_action) => self.process_key_action_oneshot(oneshot_action, key_event).await,
             KeyAction::LayerTapHold(tap_action, layer_num) => {
                 let layer_action = Action::LayerOn(layer_num);
                 self.process_key_action_tap_hold(tap_action, layer_action, key_event)
@@ -358,13 +335,12 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     /// The replacement decision is made at key_press time, and the decision
     /// is kept until the key is released.
     fn try_start_forks(&mut self, key_action: KeyAction, key_event: KeyEvent) -> KeyAction {
-        if self.keymap.borrow().forks.len() < 1 {
+        if self.keymap.borrow().behavior.fork.forks.is_empty() {
             return key_action;
         }
 
         if !key_event.pressed {
-            let mut i = 0;
-            for fork in &self.keymap.borrow().forks {
+            for (i, fork) in (&self.keymap.borrow().behavior.fork.forks).into_iter().enumerate() {
                 if fork.trigger == key_action {
                     if let Some(active) = self.fork_states[i] {
                         // If the originating key of a fork is released, simply release the replacement key
@@ -372,7 +348,6 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                         return active.replacement;
                     }
                 }
-                i += 1;
             }
             return key_action;
         }
@@ -380,9 +355,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         let mut decision_state = StateBits {
             // "explicit modifiers" includes the effect of one-shot modifiers, held modifiers keys only
             modifiers: self.resolve_explicit_modifiers(key_event.pressed),
-            leds: LedIndicator::from_bits(
-                LOCK_LED_STATES.load(core::sync::atomic::Ordering::Relaxed),
-            ),
+            leds: LedIndicator::from_bits(LOCK_LED_STATES.load(core::sync::atomic::Ordering::Relaxed)),
             mouse: HidMouseButtons::from_bits(self.mouse_report.buttons),
         };
 
@@ -392,12 +365,8 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         let mut replacement = key_action;
 
         'bind: loop {
-            let mut i = 0;
-            for fork in &self.keymap.borrow().forks {
-                if !triggered_forks[i]
-                    && self.fork_states[i].is_none()
-                    && fork.trigger == replacement
-                {
+            for (i, fork) in (&self.keymap.borrow().behavior.fork.forks).into_iter().enumerate() {
+                if !triggered_forks[i] && self.fork_states[i].is_none() && fork.trigger == replacement {
                     let decision = (fork.match_any & decision_state) != StateBits::default()
                         && (fork.match_none & decision_state) == StateBits::default();
 
@@ -442,8 +411,6 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                     //return final decision is ready
                     break 'bind;
                 }
-
-                i += 1;
             }
 
             // No (more) forks were triggered, so we are done
@@ -469,34 +436,24 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     // (explicit modifier suppressing effect will be stopped only AFTER the release hid report is sent)
     fn try_finish_forks(&mut self, original_key_action: KeyAction, key_event: KeyEvent) {
         if !key_event.pressed {
-            let mut i = 0;
-            for fork in &self.keymap.borrow().forks {
+            for (i, fork) in (&self.keymap.borrow().behavior.fork.forks).into_iter().enumerate() {
                 if self.fork_states[i].is_some() && fork.trigger == original_key_action {
                     // if the originating key of a fork is released the replacement decision is not valid anymore
                     self.fork_states[i] = None;
                 }
-                i += 1;
             }
         }
     }
 
-    async fn process_combo(
-        &mut self,
-        key_action: KeyAction,
-        key_event: KeyEvent,
-    ) -> Option<KeyAction> {
+    async fn process_combo(&mut self, key_action: KeyAction, key_event: KeyEvent) -> Option<KeyAction> {
         let mut is_combo_action = false;
         let current_layer = self.keymap.borrow().get_activated_layer();
-        for combo in self.keymap.borrow_mut().combos.iter_mut() {
+        for combo in self.keymap.borrow_mut().behavior.combo.combos.iter_mut() {
             is_combo_action |= combo.update(key_action, key_event, current_layer);
         }
 
         if key_event.pressed && is_combo_action {
-            if self
-                .combo_actions_buffer
-                .push_back((key_action, key_event))
-                .is_err()
-            {
+            if self.combo_actions_buffer.push_back((key_action, key_event)).is_err() {
                 error!("Combo actions buffer overflowed! This is a bug and should not happen!");
             }
 
@@ -504,32 +461,26 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             let next_action = self
                 .keymap
                 .borrow_mut()
+                .behavior
+                .combo
                 .combos
                 .iter_mut()
-                .find_map(|combo| {
-                    (combo.is_all_pressed() && !combo.is_triggered()).then_some(combo.trigger())
-                });
+                .find_map(|combo| (combo.is_all_pressed() && !combo.is_triggered()).then_some(combo.trigger()));
 
             if next_action.is_some() {
                 self.combo_actions_buffer.clear();
-                debug!(
-                    "Combo action {:?} matched:: clearing combo buffer",
-                    next_action
-                );
+                debug!("Combo action {:?} matched:: clearing combo buffer", next_action);
             } else {
-                let timeout =
-                    embassy_time::Timer::after(self.keymap.borrow().behavior.combo.timeout);
+                let timeout = embassy_time::Timer::after(self.keymap.borrow().behavior.combo.timeout);
                 match select(timeout, KEY_EVENT_CHANNEL.receive()).await {
-                    embassy_futures::select::Either::First(_) => self.dispatch_combos().await,
-                    embassy_futures::select::Either::Second(event) => {
-                        self.unprocessed_events.push(event).unwrap()
-                    }
+                    Either::First(_) => self.dispatch_combos().await,
+                    Either::Second(event) => self.unprocessed_events.push(event).unwrap(),
                 }
             }
             next_action
         } else {
             if !key_event.pressed {
-                for combo in self.keymap.borrow_mut().combos.iter_mut() {
+                for combo in self.keymap.borrow_mut().behavior.combo.combos.iter_mut() {
                     if combo.is_triggered() && combo.actions.contains(&key_action) {
                         combo.reset();
                         return Some(combo.output);
@@ -551,6 +502,8 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
         self.keymap
             .borrow_mut()
+            .behavior
+            .combo
             .combos
             .iter_mut()
             .filter(|combo| !combo.is_triggered())
@@ -665,27 +618,19 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     /// - When the next key is releasing
     /// - When current tap/hold key is releasing
     /// - When tap/hold key is expired
-    async fn process_key_action_tap_hold(
-        &mut self,
-        tap_action: Action,
-        hold_action: Action,
-        key_event: KeyEvent,
-    ) {
+    async fn process_key_action_tap_hold(&mut self, tap_action: Action, hold_action: Action, key_event: KeyEvent) {
         if self.keymap.borrow().behavior.tap_hold.enable_hrm {
             // If HRM is enabled, check whether it's a different key is in key streak
             if let Some(last_release_time) = self.last_release.2 {
                 if key_event.pressed {
-                    if last_release_time.elapsed()
-                        < self.keymap.borrow().behavior.tap_hold.prior_idle_time
-                        && !(key_event.row == self.last_release.0.row
-                            && key_event.col == self.last_release.0.col)
+                    if last_release_time.elapsed() < self.keymap.borrow().behavior.tap_hold.prior_idle_time
+                        && !(key_event.row == self.last_release.0.row && key_event.col == self.last_release.0.col)
                     {
                         // The previous key is a different key and released within `prior_idle_time`, it's in key streak
                         debug!("Key streak detected, trigger tap action");
                         self.process_key_action_tap(tap_action, key_event).await;
                         return;
-                    } else if last_release_time.elapsed()
-                        < self.keymap.borrow().behavior.tap_hold.hold_timeout
+                    } else if last_release_time.elapsed() < self.keymap.borrow().behavior.tap_hold.hold_timeout
                         && key_event.row == self.last_release.0.row
                         && key_event.col == self.last_release.0.col
                     {
@@ -707,21 +652,15 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             // Press
             self.timer[col][row] = Some(Instant::now());
 
-            let hold_timeout = embassy_time::Timer::after_millis(
-                self.keymap
-                    .borrow()
-                    .behavior
-                    .tap_hold
-                    .hold_timeout
-                    .as_millis(),
-            );
+            let hold_timeout =
+                embassy_time::Timer::after_millis(self.keymap.borrow().behavior.tap_hold.hold_timeout.as_millis());
             match select(hold_timeout, KEY_EVENT_CHANNEL.receive()).await {
-                embassy_futures::select::Either::First(_) => {
+                Either::First(_) => {
                     // Timeout, trigger hold
                     debug!("Hold timeout, got HOLD: {:?}, {:?}", hold_action, key_event);
                     self.process_key_action_normal(hold_action, key_event).await;
                 }
-                embassy_futures::select::Either::Second(e) => {
+                Either::Second(e) => {
                     if e.row == key_event.row && e.col == key_event.col {
                         // If it's same key event and releasing within `hold_timeout`, trigger tap
                         if !e.pressed {
@@ -792,19 +731,14 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                 };
 
                 let wait_timeout = embassy_time::Timer::after_millis(
-                    self.keymap
-                        .borrow()
-                        .behavior
-                        .tap_hold
-                        .post_wait_time
-                        .as_millis(),
+                    self.keymap.borrow().behavior.tap_hold.post_wait_time.as_millis(),
                 );
                 match select(wait_timeout, wait_release).await {
-                    embassy_futures::select::Either::First(_) => {
+                    Either::First(_) => {
                         // Wait timeout, release the hold key finally
                         self.process_key_action_normal(hold_action, key_event).await;
                     }
-                    embassy_futures::select::Either::Second(next_press) => {
+                    Either::Second(next_press) => {
                         // Next press event comes, add hold release to unprocessed list first, then add next press
                         self.unprocessed_events.push(key_event).ok();
                         self.unprocessed_events.push(next_press).ok();
@@ -823,15 +757,9 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     /// Process one shot action.
     async fn process_key_action_oneshot(&mut self, oneshot_action: Action, key_event: KeyEvent) {
         match oneshot_action {
-            Action::Modifier(m) => {
-                self.process_action_osm(m.to_hid_modifiers(), key_event)
-                    .await
-            }
+            Action::Modifier(m) => self.process_action_osm(m.to_hid_modifiers(), key_event).await,
             Action::LayerOn(l) => self.process_action_osl(l, key_event).await,
-            _ => {
-                self.process_key_action_normal(oneshot_action, key_event)
-                    .await
-            }
+            _ => self.process_key_action_normal(oneshot_action, key_event).await,
         }
     }
 
@@ -852,15 +780,14 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                 OneShotState::Initial(m) | OneShotState::Single(m) => {
                     self.osm_state = OneShotState::Single(m);
 
-                    let timeout =
-                        embassy_time::Timer::after(self.keymap.borrow().behavior.one_shot.timeout);
+                    let timeout = embassy_time::Timer::after(self.keymap.borrow().behavior.one_shot.timeout);
                     match select(timeout, KEY_EVENT_CHANNEL.receive()).await {
-                        embassy_futures::select::Either::First(_) => {
+                        Either::First(_) => {
                             // Timeout, release modifiers
                             self.update_osl(key_event);
                             self.osm_state = OneShotState::None;
                         }
-                        embassy_futures::select::Either::Second(e) => {
+                        Either::Second(e) => {
                             // New event, send it to queue
                             if self.unprocessed_events.push(e).is_err() {
                                 warn!("unprocessed event queue is full, dropping event");
@@ -907,15 +834,14 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                 OneShotState::Initial(l) | OneShotState::Single(l) => {
                     self.osl_state = OneShotState::Single(l);
 
-                    let timeout =
-                        embassy_time::Timer::after(self.keymap.borrow().behavior.one_shot.timeout);
+                    let timeout = embassy_time::Timer::after(self.keymap.borrow().behavior.one_shot.timeout);
                     match select(timeout, KEY_EVENT_CHANNEL.receive()).await {
-                        embassy_futures::select::Either::First(_) => {
+                        Either::First(_) => {
                             // Timeout, deactivate layer
                             self.keymap.borrow_mut().deactivate_layer(layer_num);
                             self.osl_state = OneShotState::None;
                         }
-                        embassy_futures::select::Either::Second(e) => {
+                        Either::Second(e) => {
                             // New event, send it to queue
                             if self.unprocessed_events.push(e).is_err() {
                                 warn!("unprocessed event queue is full, dropping event");
@@ -947,40 +873,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         } else if key.is_mouse_key() {
             self.process_action_mouse(key, key_event).await;
         } else if key.is_user() {
-            #[cfg(feature = "_nrf_ble")]
-            use {crate::ble::nrf::profile::BleProfileAction, crate::channel::BLE_PROFILE_CHANNEL};
-            #[cfg(feature = "_nrf_ble")]
-            if !key_event.pressed {
-                // Get user key id
-                let id = key as u8 - KeyCode::User0 as u8;
-                if id < 8 {
-                    info!("Switch to profile: {}", id);
-                    // User0~7: Swtich to the specific profile
-                    BLE_PROFILE_CHANNEL
-                        .send(BleProfileAction::SwitchProfile(id))
-                        .await;
-                } else if id == 8 {
-                    // User8: Next profile
-                    BLE_PROFILE_CHANNEL
-                        .send(BleProfileAction::NextProfile)
-                        .await;
-                } else if id == 9 {
-                    // User9: Previous profile
-                    BLE_PROFILE_CHANNEL
-                        .send(BleProfileAction::PreviousProfile)
-                        .await;
-                } else if id == 10 {
-                    // User10: Clear profile
-                    BLE_PROFILE_CHANNEL
-                        .send(BleProfileAction::ClearProfile)
-                        .await;
-                } else if id == 11 {
-                    // User11:
-                    BLE_PROFILE_CHANNEL
-                        .send(BleProfileAction::ToggleConnection)
-                        .await;
-                }
-            }
+            self.process_user(key, key_event).await;
         } else if key.is_basic() {
             self.process_basic(key, key_event).await;
         } else if key.is_macro() {
@@ -1244,8 +1137,65 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         }
     }
 
+    async fn process_user(&mut self, key: KeyCode, key_event: KeyEvent) {
+        debug!("Processing user key: {:?}, event: {:?}", key, key_event);
+        #[cfg(feature = "_ble")]
+        {
+            use crate::ble::trouble::profile::BleProfileAction;
+            use crate::ble::trouble::NUM_BLE_PROFILE;
+            use crate::channel::BLE_PROFILE_CHANNEL;
+            // Get user key id
+            let id = key as u8 - KeyCode::User0 as u8;
+            if key_event.pressed {
+                // Clear Peer is processed when pressed
+                if id == NUM_BLE_PROFILE as u8 + 4 {
+                    #[cfg(feature = "split")]
+                    if key_event.pressed {
+                        // Wait for 5s, if the key is still pressed, clear split peer info
+                        // If there's any other key event received during this period, skip
+                        match select(embassy_time::Timer::after_millis(5000), KEY_EVENT_CHANNEL.receive()).await {
+                            Either::First(_) => {
+                                // Timeout reached, send clear peer message
+                                info!("Clear peer");
+                                if let Ok(publisher) = crate::channel::SPLIT_MESSAGE_PUBLISHER.publisher() {
+                                    publisher.publish_immediate(crate::split::SplitMessage::ClearPeer);
+                                }
+                            }
+                            Either::Second(e) => {
+                                // Received a new key event before timeout, add to unprocessed list
+                                if self.unprocessed_events.push(e).is_err() {
+                                    warn!("unprocessed event queue is full, dropping event");
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Other user keys are processed when released
+                if id < NUM_BLE_PROFILE as u8 {
+                    info!("Switch to profile: {}", id);
+                    // User0~7: Swtich to the specific profile
+                    BLE_PROFILE_CHANNEL.send(BleProfileAction::SwitchProfile(id)).await;
+                } else if id == NUM_BLE_PROFILE as u8 {
+                    // User8: Next profile
+                    BLE_PROFILE_CHANNEL.send(BleProfileAction::NextProfile).await;
+                } else if id == NUM_BLE_PROFILE as u8 + 1 {
+                    // User9: Previous profile
+                    BLE_PROFILE_CHANNEL.send(BleProfileAction::PreviousProfile).await;
+                } else if id == NUM_BLE_PROFILE as u8 + 2 {
+                    // User10: Clear profile
+                    BLE_PROFILE_CHANNEL.send(BleProfileAction::ClearProfile).await;
+                } else if id == NUM_BLE_PROFILE as u8 + 3 {
+                    // User11:
+                    BLE_PROFILE_CHANNEL.send(BleProfileAction::ToggleConnection).await;
+                }
+            }
+        }
+    }
+
     fn process_boot(&mut self, key: KeyCode, key_event: KeyEvent) {
-        if key_event.pressed {
+        // When releasing the key, process the boot action
+        if !key_event.pressed {
             match key {
                 KeyCode::Bootloader => {
                     boot::jump_to_bootloader();
@@ -1276,45 +1226,36 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                 let mut offset = 0;
                 loop {
                     // First, get the next macro operation
-                    let (operation, new_offset) = self
-                        .keymap
-                        .borrow()
-                        .get_next_macro_operation(macro_start_idx, offset);
-
+                    let (operation, new_offset) =
+                        self.keymap.borrow().get_next_macro_operation(macro_start_idx, offset);
                     // Execute the operation
                     match operation {
                         MacroOperation::Press(k) => {
                             self.macro_texting = false;
                             self.register_key(k, key_event);
-                            self.send_keyboard_report_with_resolved_modifiers(true)
-                                .await;
+                            self.send_keyboard_report_with_resolved_modifiers(true).await;
                         }
                         MacroOperation::Release(k) => {
                             self.macro_texting = false;
                             self.unregister_key(k, key_event);
-                            self.send_keyboard_report_with_resolved_modifiers(false)
-                                .await;
+                            self.send_keyboard_report_with_resolved_modifiers(false).await;
                         }
                         MacroOperation::Tap(k) => {
                             self.macro_texting = false;
                             self.register_key(k, key_event);
-                            self.send_keyboard_report_with_resolved_modifiers(true)
-                                .await;
+                            self.send_keyboard_report_with_resolved_modifiers(true).await;
                             embassy_time::Timer::after_millis(2).await;
                             self.unregister_key(k, key_event);
-                            self.send_keyboard_report_with_resolved_modifiers(false)
-                                .await;
+                            self.send_keyboard_report_with_resolved_modifiers(false).await;
                         }
                         MacroOperation::Text(k, is_cap) => {
                             self.macro_texting = true;
                             self.macro_caps = is_cap;
                             self.register_keycode(k, key_event);
-                            self.send_keyboard_report_with_resolved_modifiers(true)
-                                .await;
+                            self.send_keyboard_report_with_resolved_modifiers(true).await;
                             embassy_time::Timer::after_millis(2).await;
                             self.unregister_keycode(k, key_event);
-                            self.send_keyboard_report_with_resolved_modifiers(false)
-                                .await;
+                            self.send_keyboard_report_with_resolved_modifiers(false).await;
                         }
                         MacroOperation::Delay(t) => {
                             embassy_time::Timer::after_millis(t as u64).await;
@@ -1322,8 +1263,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                         MacroOperation::End => {
                             if self.macro_texting {
                                 //restore the state of the keyboard (held modifiers, etc.) after text typing
-                                self.send_keyboard_report_with_resolved_modifiers(false)
-                                    .await;
+                                self.send_keyboard_report_with_resolved_modifiers(false).await;
                                 self.macro_texting = false;
                             }
                             break;
@@ -1438,18 +1378,20 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
 #[cfg(test)]
 mod test {
+    use embassy_futures::block_on;
+    use embassy_futures::select::select;
+    use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+    use embassy_sync::mutex::Mutex;
+    use embassy_time::{Duration, Timer};
+    use futures::{join, FutureExt};
+    use rusty_fork::rusty_fork_test;
+
     use super::*;
     use crate::action::KeyAction;
     use crate::config::{BehaviorConfig, CombosConfig, ForksConfig};
     use crate::fork::Fork;
     use crate::hid_state::HidModifiers;
     use crate::{a, k, layer, mo};
-    use embassy_futures::block_on;
-    use embassy_futures::select::select;
-    use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
-    use embassy_time::{Duration, Timer};
-    use futures::{join, FutureExt};
-    use rusty_fork::rusty_fork_test;
 
     // mod key values
     const KC_LSHIFT: u8 = 1 << 1;
@@ -1508,11 +1450,7 @@ mod test {
                 for expected in expected_reports {
                     match KEYBOARD_REPORT_CHANNEL.receive().await {
                         Report::KeyboardReport(report) => {
-                            assert_eq!(
-                                report, expected,
-                                "Expected {:?} but actually {:?}",
-                                expected, report
-                            );
+                            assert_eq!(report, expected, "Expected {:?} but actually {:?}", expected, report);
 
                             println!("Received expected key report: {:?}", report);
                         }
@@ -1678,10 +1616,7 @@ mod test {
 
             // Press Shift key
             keyboard.register_key(KeyCode::LShift, key_event(3, 0, true));
-            assert_eq!(
-                keyboard.held_modifiers,
-                HidModifiers::new().with_left_shift(true)
-            ); // Left Shift's modifier bit is 0x02
+            assert_eq!(keyboard.held_modifiers, HidModifiers::new().with_left_shift(true)); // Left Shift's modifier bit is 0x02
 
             // Release Shift key
             keyboard.unregister_key(KeyCode::LShift, key_event(3, 0, false));
@@ -1695,8 +1630,7 @@ mod test {
     fn test_tap_hold_key() {
         let main = async {
             let mut keyboard = create_test_keyboard();
-            let tap_hold_action =
-                KeyAction::TapHold(Action::Key(KeyCode::A), Action::Key(KeyCode::LShift));
+            let tap_hold_action = KeyAction::TapHold(Action::Key(KeyCode::A), Action::Key(KeyCode::LShift));
 
             // Tap
             keyboard
@@ -1714,10 +1648,7 @@ mod test {
                 .process_key_action(tap_hold_action.clone(), key_event(2, 1, true))
                 .await;
             Timer::after(Duration::from_millis(200)).await; // wait for hold timeout
-            assert_eq!(
-                keyboard.held_modifiers,
-                HidModifiers::new().with_left_shift(true)
-            ); // should activate Shift modifier
+            assert_eq!(keyboard.held_modifiers, HidModifiers::new().with_left_shift(true)); // should activate Shift modifier
             assert_eq!(keyboard.held_keycodes[0], KeyCode::No); // A should not be pressed
 
             keyboard
@@ -1825,16 +1756,10 @@ mod test {
             assert!(keyboard.held_keycodes.contains(&KeyCode::A));
 
             keyboard.process_inner(key_event(3, 5, true)).await;
-            assert!(
-                keyboard.held_keycodes.contains(&KeyCode::A)
-                    && keyboard.held_keycodes.contains(&KeyCode::B)
-            );
+            assert!(keyboard.held_keycodes.contains(&KeyCode::A) && keyboard.held_keycodes.contains(&KeyCode::B));
 
             keyboard.process_inner(key_event(3, 5, false)).await;
-            assert!(
-                keyboard.held_keycodes.contains(&KeyCode::A)
-                    && !keyboard.held_keycodes.contains(&KeyCode::B)
-            );
+            assert!(keyboard.held_keycodes.contains(&KeyCode::A) && !keyboard.held_keycodes.contains(&KeyCode::B));
 
             keyboard.process_inner(key_event(2, 1, false)).await;
             assert!(!keyboard.held_keycodes.contains(&KeyCode::A));
@@ -1994,9 +1919,7 @@ mod test {
                     ModifierCombination::default().with_shift(true),
                 ),
                 match_any: StateBits {
-                    modifiers: HidModifiers::default()
-                        .with_left_shift(true)
-                        .with_right_shift(true),
+                    modifiers: HidModifiers::default().with_left_shift(true).with_right_shift(true),
                     leds: LedIndicator::default(),
                     mouse: HidMouseButtons::default(),
                 },
@@ -2011,9 +1934,7 @@ mod test {
                 negative_output: KeyAction::Single(Action::Key(KeyCode::Comma)),
                 positive_output: KeyAction::Single(Action::Key(KeyCode::Semicolon)),
                 match_any: StateBits {
-                    modifiers: HidModifiers::default()
-                        .with_left_shift(true)
-                        .with_right_shift(true),
+                    modifiers: HidModifiers::default().with_left_shift(true).with_right_shift(true),
                     leds: LedIndicator::default(),
                     mouse: HidMouseButtons::default(),
                 },
@@ -2043,47 +1964,47 @@ mod test {
             );
             assert_eq!(keyboard.held_keycodes[0], KeyCode::Semicolon);
 
-            // //Release Dot key
-            // keyboard.process_inner(key_event(3, 9, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(
-            //     keyboard.resolve_modifiers(false),
-            //     HidModifiers::new().with_left_shift(true)
-            // );
+            //Release Dot key
+            keyboard.process_inner(key_event(3, 9, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(
+                keyboard.resolve_modifiers(false),
+                HidModifiers::new().with_left_shift(true)
+            );
 
-            // // Release LShift key
-            // keyboard.process_inner(key_event(3, 0, false)).await;
-            // assert_eq!(keyboard.held_modifiers, HidModifiers::new());
-            // assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
+            // Release LShift key
+            keyboard.process_inner(key_event(3, 0, false)).await;
+            assert_eq!(keyboard.held_modifiers, HidModifiers::new());
+            assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
 
-            // // Press Comma key, by itself it should emit ','
-            // keyboard.process_inner(key_event(3, 8, true)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::Comma);
+            // Press Comma key, by itself it should emit ','
+            keyboard.process_inner(key_event(3, 8, true)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::Comma);
 
-            // // Release Dot key
-            // keyboard.process_inner(key_event(3, 8, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            // Release Dot key
+            keyboard.process_inner(key_event(3, 8, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
 
-            // // Press LShift key
-            // keyboard.process_inner(key_event(3, 0, true)).await;
+            // Press LShift key
+            keyboard.process_inner(key_event(3, 0, true)).await;
 
-            // // Press Comma key, with shift it should emit ';' (shift is suppressed)
-            // keyboard.process_inner(key_event(3, 8, true)).await;
-            // assert_eq!(keyboard.resolve_modifiers(true), HidModifiers::new());
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::Semicolon);
+            // Press Comma key, with shift it should emit ';' (shift is suppressed)
+            keyboard.process_inner(key_event(3, 8, true)).await;
+            assert_eq!(keyboard.resolve_modifiers(true), HidModifiers::new());
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::Semicolon);
 
-            // // Release Comma key, shift is still held
-            // keyboard.process_inner(key_event(3, 8, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(
-            //     keyboard.resolve_modifiers(false),
-            //     HidModifiers::new().with_left_shift(true)
-            // );
+            // Release Comma key, shift is still held
+            keyboard.process_inner(key_event(3, 8, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(
+                keyboard.resolve_modifiers(false),
+                HidModifiers::new().with_left_shift(true)
+            );
 
-            // // Release LShift key
-            // keyboard.process_inner(key_event(3, 0, false)).await;
-            // assert_eq!(keyboard.held_modifiers, HidModifiers::new());
-            // assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
+            // Release LShift key
+            keyboard.process_inner(key_event(3, 0, false)).await;
+            assert_eq!(keyboard.held_modifiers, HidModifiers::new());
+            assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
         };
 
         block_on(main);
@@ -2108,9 +2029,7 @@ mod test {
                     mouse: HidMouseButtons::default(),
                 },
                 match_none: StateBits::default(),
-                kept_modifiers: HidModifiers::default()
-                    .with_left_shift(true)
-                    .with_right_shift(true),
+                kept_modifiers: HidModifiers::default().with_left_shift(true).with_right_shift(true),
                 bindable: false,
             };
 
@@ -2129,87 +2048,87 @@ mod test {
                 bindable: false,
             };
 
-            let _keyboard = create_test_keyboard_with_forks(fork1, fork2);
+            let mut keyboard = create_test_keyboard_with_forks(fork1, fork2);
 
-            // // Press Z key, by itself it should emit 'MouseBtn5'
-            // keyboard.process_inner(key_event(3, 1, true)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(keyboard.mouse_report.buttons, 1u8 << 4); // MouseBtn5
+            // Press Z key, by itself it should emit 'MouseBtn5'
+            keyboard.process_inner(key_event(3, 1, true)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(keyboard.mouse_report.buttons, 1u8 << 4); // MouseBtn5
 
-            // // Release Z key
-            // keyboard.process_inner(key_event(3, 1, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(keyboard.mouse_report.buttons, 0);
-            //
-            // // Press LCtrl key
-            // keyboard.process_inner(key_event(4, 0, true)).await;
-            // // Press LShift key
-            // keyboard.process_inner(key_event(3, 0, true)).await;
-            // assert_eq!(
-            //     keyboard.resolve_modifiers(true),
-            //     HidModifiers::new()
-            //         .with_left_ctrl(true)
-            //         .with_left_shift(true)
-            // );
+            // Release Z key
+            keyboard.process_inner(key_event(3, 1, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(keyboard.mouse_report.buttons, 0);
 
-            // // Press 'Z' key, with Ctrl it should emit 'C', with suppressed ctrl, but kept shift
-            // keyboard.process_inner(key_event(3, 1, true)).await;
-            // assert_eq!(
-            //     keyboard.resolve_modifiers(true),
-            //     HidModifiers::new().with_left_shift(true)
-            // );
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::C);
-            // assert_eq!(keyboard.mouse_report.buttons, 0);
+            // Press LCtrl key
+            keyboard.process_inner(key_event(4, 0, true)).await;
+            // Press LShift key
+            keyboard.process_inner(key_event(3, 0, true)).await;
+            assert_eq!(
+                keyboard.resolve_modifiers(true),
+                HidModifiers::new()
+                    .with_left_ctrl(true)
+                    .with_left_shift(true)
+            );
 
-            // // Release 'Z' key, suppression of ctrl is removed
-            // keyboard.process_inner(key_event(3, 1, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(
-            //     keyboard.resolve_modifiers(false),
-            //     HidModifiers::new()
-            //         .with_left_ctrl(true)
-            //         .with_left_shift(true)
-            // );
+            // Press 'Z' key, with Ctrl it should emit 'C', with suppressed ctrl, but kept shift
+            keyboard.process_inner(key_event(3, 1, true)).await;
+            assert_eq!(
+                keyboard.resolve_modifiers(true),
+                HidModifiers::new().with_left_shift(true)
+            );
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::C);
+            assert_eq!(keyboard.mouse_report.buttons, 0);
 
-            // // Release LCtrl key
-            // keyboard.process_inner(key_event(4, 0, false)).await;
-            // assert_eq!(
-            //     keyboard.resolve_modifiers(false),
-            //     HidModifiers::new().with_left_shift(true)
-            // );
+            // Release 'Z' key, suppression of ctrl is removed
+            keyboard.process_inner(key_event(3, 1, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(
+                keyboard.resolve_modifiers(false),
+                HidModifiers::new()
+                    .with_left_ctrl(true)
+                    .with_left_shift(true)
+            );
 
-            // // Release LShift key
-            // keyboard.process_inner(key_event(3, 0, false)).await;
-            // assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
+            // Release LCtrl key
+            keyboard.process_inner(key_event(4, 0, false)).await;
+            assert_eq!(
+                keyboard.resolve_modifiers(false),
+                HidModifiers::new().with_left_shift(true)
+            );
 
-            // // Press 'A' key, by itself it should emit 'S'
-            // keyboard.process_inner(key_event(2, 1, true)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::S);
+            // Release LShift key
+            keyboard.process_inner(key_event(3, 0, false)).await;
+            assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
 
-            // // Release 'A' key
-            // keyboard.process_inner(key_event(2, 1, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
-            // assert_eq!(keyboard.mouse_report.buttons, 0);
+            // Press 'A' key, by itself it should emit 'S'
+            keyboard.process_inner(key_event(2, 1, true)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::S);
 
-            // //Timer::after(Duration::from_millis(200)).await; // wait a bit
+            // Release 'A' key
+            keyboard.process_inner(key_event(2, 1, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(keyboard.resolve_modifiers(false), HidModifiers::new());
+            assert_eq!(keyboard.mouse_report.buttons, 0);
 
-            // // Press Z key, by itself it should emit 'MouseBtn5'
-            // keyboard.process_inner(key_event(3, 1, true)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
-            // assert_eq!(keyboard.mouse_report.buttons, 1u8 << 4); // MouseBtn5 //this fails, but ok in debug - why?
+            Timer::after(Duration::from_millis(200)).await; // wait a bit
 
-            // // Press 'A' key, with 'MouseBtn5' it should emit 'D'
-            // keyboard.process_inner(key_event(2, 1, true)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::D);
+            // Press Z key, by itself it should emit 'MouseBtn5'
+            keyboard.process_inner(key_event(3, 1, true)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            assert_eq!(keyboard.mouse_report.buttons, 1u8 << 4); // MouseBtn5 //this fails, but ok in debug - why?
 
-            // // Release Z (MouseBtn1) key, 'D' is still held
-            // keyboard.process_inner(key_event(3, 8, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::D);
+            // Press 'A' key, with 'MouseBtn5' it should emit 'D'
+            keyboard.process_inner(key_event(2, 1, true)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::D);
 
-            // // Release 'A' key -> releases 'D'
-            // keyboard.process_inner(key_event(2, 1, false)).await;
-            // assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
+            // Release Z (MouseBtn1) key, 'D' is still held
+            keyboard.process_inner(key_event(3, 8, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::D);
+
+            // Release 'A' key -> releases 'D'
+            keyboard.process_inner(key_event(2, 1, false)).await;
+            assert_eq!(keyboard.held_keycodes[0], KeyCode::No);
         };
 
         block_on(main);

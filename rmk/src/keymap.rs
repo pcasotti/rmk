@@ -1,17 +1,15 @@
-use crate::{
-    action::{EncoderAction, KeyAction},
-    combo::{Combo, COMBO_MAX_NUM},
-    config::BehaviorConfig,
-    event::{KeyEvent, RotaryEncoderEvent},
-    fork::{Fork, FORK_MAX_NUM},
-    keyboard_macro::{MacroOperation, MACRO_SPACE_SIZE},
-    keycode::KeyCode,
-};
-#[cfg(feature = "storage")]
-use crate::{boot::reboot_keyboard, storage::Storage};
 #[cfg(feature = "storage")]
 use embedded_storage_async::nor_flash::NorFlash;
 use num_enum::FromPrimitive;
+
+use crate::action::{EncoderAction, KeyAction};
+use crate::combo::{Combo, COMBO_MAX_NUM};
+use crate::config::BehaviorConfig;
+use crate::event::{KeyEvent, RotaryEncoderEvent};
+use crate::keyboard_macro::{MacroOperation, MACRO_SPACE_SIZE};
+use crate::keycode::KeyCode;
+#[cfg(feature = "storage")]
+use crate::{boot::reboot_keyboard, storage::Storage};
 
 /// Keymap represents the stack of layers.
 ///
@@ -19,13 +17,7 @@ use num_enum::FromPrimitive;
 ///
 /// Keymap should be binded to the actual pcb matrix definition.
 /// RMK detects hardware key strokes, uses tuple `(row, col, layer)` to retrieve the action from Keymap.
-pub struct KeyMap<
-    'a,
-    const ROW: usize,
-    const COL: usize,
-    const NUM_LAYER: usize,
-    const NUM_ENCODER: usize = 0,
-> {
+pub struct KeyMap<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_ENCODER: usize = 0> {
     /// Layers
     pub(crate) layers: &'a mut [[[KeyAction; COL]; ROW]; NUM_LAYER],
     /// Rotary encoders, each rotary encoder is represented as (Clockwise, CounterClockwise)
@@ -38,17 +30,21 @@ pub struct KeyMap<
     layer_cache: [[u8; COL]; ROW],
     /// Macro cache
     pub(crate) macro_cache: [u8; MACRO_SPACE_SIZE],
-    /// Combos
-    pub(crate) combos: [Combo; COMBO_MAX_NUM],
-    /// Forks
-    pub(crate) forks: [Fork; FORK_MAX_NUM],
     /// Options for configurable action behavior
     pub(crate) behavior: BehaviorConfig,
 }
 
-fn _reorder_combos(combos: &mut [Combo; COMBO_MAX_NUM]) {
+fn _reorder_combos(combos: &mut heapless::Vec<Combo, COMBO_MAX_NUM>) {
     // Sort the combos by their length
     combos.sort_unstable_by(|c1, c2| c2.actions.len().cmp(&c1.actions.len()))
+}
+
+fn _fill_vec<T: Default, const N: usize>(vector: &mut heapless::Vec<T, N>) {
+    while !vector.is_full() {
+        // push cannot fail, as we checked that the vector is empty
+        // because we don't want require `Debug` we can't simply use `.expect()`
+        unsafe { vector.push(T::default()).unwrap_unchecked() }
+    }
 }
 
 impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_ENCODER: usize>
@@ -57,21 +53,16 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     pub async fn new(
         action_map: &'a mut [[[KeyAction; COL]; ROW]; NUM_LAYER],
         encoder_map: Option<&'a mut [[EncoderAction; NUM_ENCODER]; NUM_LAYER]>,
-        behavior: BehaviorConfig,
+        mut behavior: BehaviorConfig,
     ) -> Self {
         // If the storage is initialized, read keymap from storage
-        let mut combos: [Combo; COMBO_MAX_NUM] = Default::default();
-        for (i, combo) in behavior.combo.combos.iter().enumerate() {
-            combos[i] = combo.clone();
-        }
 
+        // fill up the empty places so new combos/forks can be configured via Vial
+        _fill_vec(&mut behavior.combo.combos);
         //reorder the combos
-        _reorder_combos(&mut combos);
+        _reorder_combos(&mut behavior.combo.combos);
 
-        let mut forks: [Fork; FORK_MAX_NUM] = Default::default();
-        for (i, fork) in behavior.fork.forks.iter().enumerate() {
-            forks[i] = fork.clone();
-        }
+        _fill_vec(&mut behavior.fork.forks);
 
         KeyMap {
             layers: action_map,
@@ -80,8 +71,6 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             default_layer: 0,
             layer_cache: [[0; COL]; ROW],
             macro_cache: [0; MACRO_SPACE_SIZE],
-            combos,
-            forks,
             behavior,
         }
     }
@@ -90,18 +79,13 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         action_map: &'a mut [[[KeyAction; COL]; ROW]; NUM_LAYER],
         mut encoder_map: Option<&'a mut [[EncoderAction; NUM_ENCODER]; NUM_LAYER]>,
         storage: Option<&mut Storage<F, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
-        behavior: BehaviorConfig,
+        mut behavior: BehaviorConfig,
     ) -> Self {
         // If the storage is initialized, read keymap from storage
         let mut macro_cache = [0; MACRO_SPACE_SIZE];
-        let mut combos: [Combo; COMBO_MAX_NUM] = Default::default();
-        for (i, combo) in behavior.combo.combos.iter().enumerate() {
-            combos[i] = combo.clone();
-        }
-        let mut forks: [Fork; FORK_MAX_NUM] = Default::default();
-        for (i, fork) in behavior.fork.forks.iter().enumerate() {
-            forks[i] = fork.clone();
-        }
+        _fill_vec(&mut behavior.combo.combos);
+        _fill_vec(&mut behavior.fork.forks);
+
         if let Some(storage) = storage {
             if {
                 Ok(())
@@ -110,9 +94,9 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                     // Read macro cache
                     .and(storage.read_macro_cache(&mut macro_cache).await)
                     // Read combo cache
-                    .and(storage.read_combos(&mut combos).await)
+                    .and(storage.read_combos(&mut behavior.combo.combos).await)
                     // Read fork cache
-                    .and(storage.read_forks(&mut forks).await)
+                    .and(storage.read_forks(&mut behavior.fork.forks).await)
             }
             .is_err()
             {
@@ -132,8 +116,6 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             default_layer: 0,
             layer_cache: [[0; COL]; ROW],
             macro_cache,
-            combos,
-            forks,
             behavior,
         }
     }
@@ -154,11 +136,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
     /// Get the next macro operation starting from given index and offset
     /// Return current macro operation and the next operations's offset
-    pub(crate) fn get_next_macro_operation(
-        &self,
-        macro_start_idx: usize,
-        offset: usize,
-    ) -> (MacroOperation, usize) {
+    pub(crate) fn get_next_macro_operation(&self, macro_start_idx: usize, offset: usize) -> (MacroOperation, usize) {
         let idx = macro_start_idx + offset;
         if idx >= self.macro_cache.len() - 1 {
             return (MacroOperation::End, offset);
@@ -195,8 +173,8 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             (1, 4) => {
                 // SS_QMK_PREFIX + SS_DELAY_CODE
                 if idx + 3 < self.macro_cache.len() {
-                    let delay_ms = (self.macro_cache[idx + 2] as u16 - 1)
-                        + (self.macro_cache[idx + 3] as u16 - 1) * 255;
+                    let delay_ms =
+                        (self.macro_cache[idx + 2] as u16 - 1) + (self.macro_cache[idx + 3] as u16 - 1) * 255;
                     (MacroOperation::Delay(delay_ms), offset + 4)
                 } else {
                     (MacroOperation::End, offset + 4)
@@ -234,13 +212,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         }
     }
 
-    pub(crate) fn set_action_at(
-        &mut self,
-        row: usize,
-        col: usize,
-        layer_num: usize,
-        action: KeyAction,
-    ) {
+    pub(crate) fn set_action_at(&mut self, row: usize, col: usize, layer_num: usize, action: KeyAction) {
         self.layers[layer_num][row][col] = action;
     }
 
@@ -283,10 +255,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         KeyAction::No
     }
 
-    pub(crate) fn get_encoder_with_layer_cache(
-        &self,
-        encoder_event: RotaryEncoderEvent,
-    ) -> Option<&EncoderAction> {
+    pub(crate) fn get_encoder_with_layer_cache(&self, encoder_event: RotaryEncoderEvent) -> Option<&EncoderAction> {
         let layer = self.get_activated_layer();
         if let Some(encoders) = &self.encoders {
             encoders[layer as usize].get(encoder_event.id as usize)
@@ -369,32 +338,80 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
     //order combos by their actions length
     pub(crate) fn reorder_combos(&mut self) {
-        _reorder_combos(&mut self.combos);
+        _reorder_combos(&mut self.behavior.combo.combos);
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::{Combo, _reorder_combos};
     use crate::combo::COMBO_MAX_NUM;
+    use crate::fork::{Fork, StateBits, FORK_MAX_NUM};
+    use crate::hid_state::HidModifiers;
     use crate::k;
+    use crate::keymap::_fill_vec;
     use crate::{action::KeyAction, keycode::KeyCode};
 
-    use super::{Combo, _reorder_combos};
+    #[test]
+    fn test_fill_vec() {
+        let mut combos: heapless::Vec<_, COMBO_MAX_NUM> = heapless::Vec::from_slice(&[
+            Combo::new([k!(A), k!(B), k!(C), k!(D)], k!(Z), None),
+            Combo::new([k!(A), k!(B)], k!(X), None),
+            Combo::new([k!(A), k!(B), k!(C)], k!(Y), None),
+        ])
+        .unwrap();
+
+        _fill_vec(&mut combos);
+
+        assert_eq!(combos.len(), COMBO_MAX_NUM);
+
+        let mut forks: heapless::Vec<_, FORK_MAX_NUM> = heapless::Vec::from_slice(&[
+            Fork::new(
+                k!(A),
+                k!(Y),
+                k!(F),
+                StateBits::default(),
+                StateBits::default(),
+                HidModifiers::new(),
+                false,
+            ),
+            Fork::new(
+                k!(B),
+                k!(B),
+                k!(F),
+                StateBits::default(),
+                StateBits::default(),
+                HidModifiers::new(),
+                false,
+            ),
+            Fork::new(
+                k!(C),
+                k!(Y),
+                k!(Y),
+                StateBits::default(),
+                StateBits::default(),
+                HidModifiers::new(),
+                false,
+            ),
+        ])
+        .unwrap();
+
+        _fill_vec(&mut forks);
+
+        assert_eq!(forks.len(), FORK_MAX_NUM);
+    }
 
     #[test]
     fn test_combo_reordering() {
-        let combos_raw = vec![
+        let combos_raw = [
             Combo::new([k!(A), k!(B), k!(C), k!(D)], k!(Z), None),
             Combo::new([k!(A), k!(B)], k!(X), None),
             Combo::new([k!(A), k!(B), k!(C)], k!(Y), None),
         ];
-        // trans combos from vec to array
-        let mut combos: [Combo; COMBO_MAX_NUM] = Default::default();
-        for (i, combo) in combos_raw.clone().into_iter().enumerate() {
-            combos[i] = combo;
-        }
+        let mut combos = heapless::Vec::from_slice(&combos_raw).unwrap();
 
         _reorder_combos(&mut combos);
+        _fill_vec(&mut combos);
 
         let result: Vec<u16> = combos
             .iter()
@@ -406,16 +423,7 @@ mod test {
             .collect();
         assert_eq!(
             result,
-            vec![
-                KeyCode::Z as u16,
-                KeyCode::Y as u16,
-                KeyCode::X as u16,
-                0,
-                0,
-                0,
-                0,
-                0
-            ]
+            vec![KeyCode::Z as u16, KeyCode::Y as u16, KeyCode::X as u16, 0, 0, 0, 0, 0]
         );
     }
 }
