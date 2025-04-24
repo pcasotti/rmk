@@ -17,7 +17,7 @@
       in
       with pkgs;
       {
-        devShells.default = mkShell {
+        devShells.default = mkShell rec {
           buildInputs = [
             bacon
             openssl
@@ -28,7 +28,9 @@
             cargo-make
             flip-link
             elf2uf2-rs
+            libclang
           ];
+          LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
         };
       }
     );
