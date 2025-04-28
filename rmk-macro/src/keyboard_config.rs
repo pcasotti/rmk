@@ -8,8 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 
 use crate::config::{
-    BehaviorConfig, BleConfig, DependencyConfig, InputDeviceConfig, KeyboardInfo, KeyboardTomlConfig, LayerTomlConfig,
-    LayoutConfig, LayoutTomlConfig, LightConfig, MatrixConfig, MatrixType, SplitConfig, StorageConfig,
+    BehaviorConfig, BleConfig, DependencyConfig, DisplayConfig, InputDeviceConfig, KeyboardInfo, KeyboardTomlConfig, LayerTomlConfig, LayoutConfig, LayoutTomlConfig, LightConfig, MatrixConfig, MatrixType, SplitConfig, StorageConfig
 };
 use crate::default_config::esp32::default_esp32;
 use crate::default_config::nrf52810::default_nrf52810;
@@ -96,6 +95,8 @@ pub(crate) struct KeyboardConfig {
     pub(crate) behavior: BehaviorConfig,
     // Light config
     pub(crate) light: LightConfig,
+
+    pub(crate) display: DisplayConfig,
     // Storage config
     pub(crate) storage: StorageConfig,
     // Dependency config

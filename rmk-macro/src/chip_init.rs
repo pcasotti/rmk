@@ -70,6 +70,8 @@ pub(crate) fn chip_init_default(keyboard_config: &KeyboardConfig) -> TokenStream
                     let mut config = ::embassy_nrf::config::Config::default();
                     #dcdc_config
                     let p = ::embassy_nrf::init(config);
+                    let twi_config = ::embassy_nrf::twim::Config::default();
+                    let mut twi = ::embassy_nrf::twim::Twim::new(p.TWISPI0, Irqs, p.P0_17, p.P0_20, twi_config);
                     #ble_init
             }
         }

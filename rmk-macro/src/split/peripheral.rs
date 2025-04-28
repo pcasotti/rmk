@@ -44,6 +44,7 @@ pub(crate) fn parse_split_peripheral_mod(id: usize, _attr: proc_macro::TokenStre
                 RADIO => ::nrf_sdc::mpsl::HighPrioInterruptHandler;
                 TIMER0 => ::nrf_sdc::mpsl::HighPrioInterruptHandler;
                 RTC0 => ::nrf_sdc::mpsl::HighPrioInterruptHandler;
+                TWISPI0 => ::embassy_nrf::twim::InterruptHandler<::embassy_nrf::peripherals::TWISPI0>;
             });
 
             #[::embassy_executor::task]

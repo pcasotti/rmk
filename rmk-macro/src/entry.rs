@@ -63,6 +63,10 @@ pub(crate) fn rmk_entry_select(
             )
         }
     };
+    let display_task = quote! {
+        // ::rmk::display::DisplayService::new(&mut display_controller).run()
+        ::rmk::display::run(twi)
+    };
     let entry = match &keyboard_config.board {
         BoardConfig::Split(split_config) => {
             let keyboard_task = quote! {
@@ -108,7 +112,7 @@ pub(crate) fn rmk_entry_select(
                     let rmk_task = quote! {
                         ::rmk::run_rmk(&keymap, driver, &stack, &mut storage, &mut light_controller, rmk_config),
                     };
-                    let mut tasks = vec![devices_task, rmk_task, keyboard_task];
+                    let mut tasks = vec![display_task, devices_task, rmk_task, keyboard_task];
                     if !processors.is_empty() {
                         tasks.push(processors_task);
                     };

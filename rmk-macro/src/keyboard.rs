@@ -9,6 +9,7 @@ use crate::ble::expand_ble_config;
 use crate::chip_init::expand_chip_init;
 use crate::comm::expand_usb_init;
 use crate::config::MatrixType;
+use crate::display::expand_display_config;
 use crate::entry::expand_rmk_entry;
 use crate::feature::{get_rmk_features, is_feature_enabled};
 use crate::flash::expand_flash_init;
@@ -121,6 +122,7 @@ fn expand_main(
     let usb_init = expand_usb_init(keyboard_config, &item_mod);
     let flash_init = expand_flash_init(keyboard_config);
     let light_config = expand_light_config(keyboard_config);
+    let display_config = expand_display_config(keyboard_config);
     let behavior_config = expand_behavior_config(keyboard_config);
     let matrix_config = expand_matrix_config(keyboard_config, rmk_features);
     let (ble_config, set_ble_config) = expand_ble_config(keyboard_config);
@@ -160,6 +162,8 @@ fn expand_main(
 
             // Initialize light config as `light_config`
             #light_config
+
+            #display_config
 
             // Initialize behavior config config as `behavior_config`
             #behavior_config
@@ -302,5 +306,6 @@ fn expand_controller_init(keyboard_config: &KeyboardConfig) -> TokenStream2 {
 
     quote! {
         let mut light_controller: ::rmk::light::LightController<#output_pin_type>  = ::rmk::light::LightController::new(light_config);
+        let mut display_controller: ::rmk::display::DisplayController<#output_pin_type>  = ::rmk::display::DisplayController::new(display_config);
     }
 }

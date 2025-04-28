@@ -16,6 +16,7 @@ mod keyboard_config;
 mod keycode_alias;
 mod layout;
 mod light;
+mod display;
 mod matrix;
 mod split;
 #[rustfmt::skip]

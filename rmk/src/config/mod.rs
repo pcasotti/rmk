@@ -87,12 +87,14 @@ impl<const KEY_EVENT_CHANNEL_SIZE: usize, const EVENT_CHANNEL_SIZE: usize, const
 /// Controllers are used for controlling other devices on the board, such as lights, RGB, etc.
 pub struct ControllerConfig<O: OutputPin> {
     pub light_config: LightConfig<O>,
+    pub display_config: DisplayConfig<O>,
 }
 
 impl<O: OutputPin> Default for ControllerConfig<O> {
     fn default() -> Self {
         Self {
             light_config: LightConfig::default(),
+            display_config: DisplayConfig::default(),
         }
     }
 }
@@ -222,6 +224,20 @@ impl<O: OutputPin> Default for LightConfig<O> {
             capslock: None,
             scrolllock: None,
             numslock: None,
+        }
+    }
+}
+
+pub struct DisplayConfig<O: OutputPin> {
+    pub scl: Option<O>,
+    pub sda: Option<O>,
+}
+
+impl<O: OutputPin> Default for DisplayConfig<O> {
+    fn default() -> Self {
+        Self {
+            scl: None,
+            sda: None,
         }
     }
 }

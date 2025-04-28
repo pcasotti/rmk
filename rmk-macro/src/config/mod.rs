@@ -130,6 +130,13 @@ pub struct LightConfig {
     pub numslock: Option<PinConfig>,
 }
 
+#[derive(Clone, Default, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DisplayConfig {
+    pub scl: Option<PinConfig>,
+    pub sda: Option<PinConfig>,
+}
+
 /// Config for a single pin
 #[derive(Clone, Default, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

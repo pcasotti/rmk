@@ -106,6 +106,7 @@ pub(crate) fn bind_interrupt_default(keyboard_config: &KeyboardConfig) -> TokenS
                     RADIO => ::nrf_sdc::mpsl::HighPrioInterruptHandler;
                     TIMER0 => ::nrf_sdc::mpsl::HighPrioInterruptHandler;
                     RTC0 => ::nrf_sdc::mpsl::HighPrioInterruptHandler;
+                    TWISPI0 => ::embassy_nrf::twim::InterruptHandler<::embassy_nrf::peripherals::TWISPI0>;
                 });
 
                 #[::embassy_executor::task]
