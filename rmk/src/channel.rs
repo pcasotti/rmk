@@ -1,17 +1,19 @@
 //! Exposed channels which can be used to share data across devices & processors
 
 use embassy_sync::channel::Channel;
+use embassy_sync::pubsub::PubSubChannel;
 pub use embassy_sync::{blocking_mutex, channel, pubsub, zerocopy_channel};
 
 use crate::event::{Event, KeyEvent};
 use crate::hid::Report;
+use crate::output_device::OutputDeviceEvent;
 #[cfg(feature = "storage")]
 use crate::storage::FlashOperationMessage;
 use crate::RawMutex;
 #[cfg(feature = "_ble")]
 use {crate::ble::trouble::profile::BleProfileAction, crate::light::LedIndicator, embassy_sync::signal::Signal};
 #[cfg(feature = "split")]
-use {crate::split::SplitMessage, embassy_sync::pubsub::PubSubChannel};
+use crate::split::SplitMessage;
 
 pub const EVENT_CHANNEL_SIZE: usize = 16;
 pub const REPORT_CHANNEL_SIZE: usize = 16;
@@ -21,6 +23,8 @@ pub const REPORT_CHANNEL_SIZE: usize = 16;
 pub static LED_SIGNAL: Signal<RawMutex, LedIndicator> = Signal::new();
 /// Channel for key events only
 pub static KEY_EVENT_CHANNEL: Channel<RawMutex, KeyEvent, EVENT_CHANNEL_SIZE> = Channel::new();
+/// Channel for all other events
+pub static OUTPUT_DEVICE_CHANNEL: PubSubChannel<RawMutex, OutputDeviceEvent, EVENT_CHANNEL_SIZE, 16, 16> = PubSubChannel::new();
 /// Channel for all other events
 pub static EVENT_CHANNEL: Channel<RawMutex, Event, EVENT_CHANNEL_SIZE> = Channel::new();
 /// Channel for keyboard report from input processors to hid writer/reader

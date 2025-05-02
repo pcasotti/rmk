@@ -1,13 +1,17 @@
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::pubsub::Publisher;
 #[cfg(feature = "storage")]
 use embedded_storage_async::nor_flash::NorFlash;
 use num_enum::FromPrimitive;
 
 use crate::action::{EncoderAction, KeyAction};
+use crate::channel::{EVENT_CHANNEL_SIZE, OUTPUT_DEVICE_CHANNEL};
 use crate::combo::{Combo, COMBO_MAX_NUM};
 use crate::config::BehaviorConfig;
 use crate::event::{KeyEvent, RotaryEncoderEvent};
 use crate::keyboard_macro::{MacroOperation, MACRO_SPACE_SIZE};
 use crate::keycode::KeyCode;
+use crate::output_device::OutputDeviceEvent;
 #[cfg(feature = "storage")]
 use crate::{boot::reboot_keyboard, storage::Storage};
 
@@ -32,6 +36,7 @@ pub struct KeyMap<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize
     pub(crate) macro_cache: [u8; MACRO_SPACE_SIZE],
     /// Options for configurable action behavior
     pub(crate) behavior: BehaviorConfig,
+    publisher: Publisher<'static, ThreadModeRawMutex, OutputDeviceEvent, EVENT_CHANNEL_SIZE, 16, 16>,
 }
 
 fn _reorder_combos(combos: &mut heapless::Vec<Combo, COMBO_MAX_NUM>) {
@@ -72,6 +77,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             layer_cache: [[0; COL]; ROW],
             macro_cache: [0; MACRO_SPACE_SIZE],
             behavior,
+            publisher: unwrap!(OUTPUT_DEVICE_CHANNEL.publisher()),
         }
     }
     #[cfg(feature = "storage")]
@@ -117,6 +123,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             layer_cache: [[0; COL]; ROW],
             macro_cache,
             behavior,
+            publisher: unwrap!(OUTPUT_DEVICE_CHANNEL.publisher()),
         }
     }
 
@@ -295,6 +302,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             self.layer_state[tri_layer[2] as usize] =
                 self.layer_state[tri_layer[0] as usize] && self.layer_state[tri_layer[1] as usize];
         }
+        self.publisher.publish_immediate(OutputDeviceEvent::LayerChange(self.get_activated_layer()));
     }
 
     /// Activate given layer

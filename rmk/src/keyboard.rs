@@ -2,13 +2,15 @@ use core::cell::RefCell;
 
 use embassy_futures::select::{select, Either};
 use embassy_futures::yield_now;
+use embassy_sync::blocking_mutex::raw::ThreadModeRawMutex;
+use embassy_sync::pubsub::Publisher;
 use embassy_time::{Instant, Timer};
 use heapless::{Deque, FnvIndexMap, Vec};
 use usbd_hid::descriptor::{MediaKeyboardReport, MouseReport, SystemControlReport};
 
 use crate::action::{Action, KeyAction};
 use crate::boot;
-use crate::channel::{KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL};
+use crate::channel::{EVENT_CHANNEL_SIZE, KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL, OUTPUT_DEVICE_CHANNEL};
 use crate::combo::{Combo, COMBO_MAX_LENGTH};
 use crate::config::BehaviorConfig;
 use crate::event::KeyEvent;
@@ -20,6 +22,7 @@ use crate::keyboard_macro::{MacroOperation, NUM_MACRO};
 use crate::keycode::{KeyCode, ModifierCombination};
 use crate::keymap::KeyMap;
 use crate::light::LedIndicator;
+use crate::output_device::OutputDeviceEvent;
 use crate::usb::descriptor::{KeyboardReport, ViaReport};
 
 /// State machine for one shot keys
@@ -112,7 +115,7 @@ pub struct Keyboard<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usi
     fork_states: [Option<ActiveFork>; FORK_MAX_NUM], // chosen replacement key of the currently triggered forks and the related modifier suppression
     fork_keep_mask: HidModifiers, // aggregate here the explicit modifiers pressed since the last fork activations
 
-    /// the held keys for the keyboard hid report, except the modifiers
+    /// the held modifiers for the keyboard hid report
     held_modifiers: HidModifiers,
 
     /// the held keys for the keyboard hid report, except the modifiers
@@ -151,6 +154,7 @@ pub struct Keyboard<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usi
 
     /// Used for temporarily disabling combos
     combo_on: bool,
+    publisher: Publisher<'static, ThreadModeRawMutex, OutputDeviceEvent, EVENT_CHANNEL_SIZE, 16, 16>,
 }
 
 impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_ENCODER: usize>
@@ -201,6 +205,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             mouse_wheel_move_delta: 1,
             combo_actions_buffer: Deque::new(),
             combo_on: true,
+            publisher: unwrap!(OUTPUT_DEVICE_CHANNEL.publisher()),
         }
     }
 
@@ -329,6 +334,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         }
 
         self.try_finish_forks(original_key_action, key_event);
+        self.publisher.publish_immediate(OutputDeviceEvent::Modifier(self.resolve_modifiers(key_event.pressed)));
     }
 
     /// Replaces the incoming key_action if a fork is configured for that key.
@@ -916,7 +922,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     /// - registered (held) modifiers keys
     /// - one-shot modifiers
     /// - effect of KeyAction::WithModifiers (while they are pressed)
-    /// - possible fork related modifier suppressions    
+    /// - possible fork related modifier suppressions
     pub fn resolve_modifiers(&self, pressed: bool) -> HidModifiers {
         // text typing macro should not be affected by any modifiers,
         // only its own capitalization

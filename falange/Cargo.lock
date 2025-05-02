@@ -1726,6 +1726,7 @@ dependencies = [
  "embassy-sync",
  "embassy-time",
  "embassy-usb",
+ "embedded-graphics",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
  "embedded-io-async",
@@ -1740,6 +1741,7 @@ dependencies = [
  "rmk-macro",
  "sequential-storage",
  "serde",
+ "ssd1306",
  "ssmarshal",
  "static_cell",
  "trouble-host",
@@ -1943,6 +1945,7 @@ dependencies = [
  "display-interface-spi",
  "embedded-graphics-core",
  "embedded-hal 1.0.0",
+ "embedded-hal-async",
  "maybe-async-cfg",
 ]
 

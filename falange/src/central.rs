@@ -24,7 +24,7 @@ use nrf_sdc::{self as sdc, mpsl};
 use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
 use rmk::ble::trouble::build_ble_stack;
-use rmk::channel::EVENT_CHANNEL;
+use rmk::channel::{EVENT_CHANNEL, OUTPUT_DEVICE_CHANNEL};
 use rmk::config::{BehaviorConfig, BleBatteryConfig, ControllerConfig, KeyboardUsbConfig, RmkConfig, StorageConfig, VialConfig};
 use rmk::debounce::default_debouncer::DefaultDebouncer;
 use rmk::futures::future::{join, join4};
@@ -33,13 +33,15 @@ use rmk::input_device::battery::BatteryProcessor;
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
 use rmk::light::LightController;
+use rmk::output_device::display::DisplayDevice;
+use rmk::output_device::{OutputDevice, OutputDeviceEvent};
 use rmk::split::ble::central::read_peripheral_addresses;
 use rmk::split::central::{run_peripheral_manager, CentralMatrix};
-use rmk::{initialize_keymap_and_storage, run_devices, run_processor_chain, run_rmk, HostResources};
-use ssd1306::mode::DisplayConfig;
+use rmk::{initialize_keymap_and_storage, run_devices, run_output_devices, run_processor_chain, run_rmk, HostResources};
+use ssd1306::mode::{DisplayConfig, DisplayConfigAsync};
 use ssd1306::prelude::DisplayRotation;
 use ssd1306::size::DisplaySize128x32;
-use ssd1306::{I2CDisplayInterface, Ssd1306};
+use ssd1306::{I2CDisplayInterface, Ssd1306, Ssd1306Async};
 use static_cell::StaticCell;
 use vial::{VIAL_KEYBOARD_DEF, VIAL_KEYBOARD_ID};
 use {defmt_rtt as _, panic_probe as _};
@@ -145,21 +147,9 @@ async fn main(spawner: Spawner) {
 
     let twim = twim::Twim::new(p.TWISPI0, Irqs, p.P0_17, p.P0_20, twim::Config::default());
     let interface = I2CDisplayInterface::new(twim);
-    let mut display = Ssd1306::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
+    let mut display = Ssd1306Async::new(interface, DisplaySize128x32, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
-    display.init().unwrap();
-
-    let style = PrimitiveStyleBuilder::new()
-        .stroke_width(1)
-        .stroke_color(BinaryColor::On)
-        .build();
-
-    Rectangle::new(Point::new(0, 0), Size::new(127, 31))
-        .into_styled(style)
-        .draw(&mut display)
-        .unwrap();
-
-    display.flush().unwrap();
+    display.init().await.unwrap();
 
     // Initialize usb driver
     let driver = Driver::new(p.USBD, Irqs, HardwareVbusDetect::new(Irqs));
@@ -237,14 +227,22 @@ async fn main(spawner: Spawner) {
     );
     let mut batt_proc = BatteryProcessor::new(2000, 2806, &keymap);
 
+    let mut display_device = DisplayDevice::new(display);
+
     // Start
     join4(
         run_devices! (
             (matrix, adc_device) => EVENT_CHANNEL,
         ),
-        run_processor_chain! {
-            EVENT_CHANNEL => [batt_proc],
-        },
+        join(
+            run_processor_chain! {
+                EVENT_CHANNEL => [batt_proc],
+            },
+            // run_output_devices! (
+            //     (display_device) => OUTPUT_DEVICE_CHANNEL,
+            // ),
+            display_device.run(),
+        ),
         keyboard.run(),
         join(
             run_peripheral_manager::<4, 5, 0, 5, _>(0, peripheral_addrs[0], &stack),
