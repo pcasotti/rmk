@@ -62,11 +62,9 @@ keymap = [
 ]
 
 [storage]
-# clear_storage = true
 
 [ble]
 enabled = true
-battery_adc_pin = "vddh"
 
 [behavior.tri_layer]
 upper = 1

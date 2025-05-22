@@ -41,10 +41,10 @@ args = [
 dependencies = ["install-llvm-tools", "flip-link"]
 
 [tasks.uf2-central]
-install_crate = { crate_name = "cargo-hex-to-uf2", binary = "cargo", test_arg = [
-    "hex-to-uf2",
-    "--help",
-] }
+# install_crate = { crate_name = "cargo-hex-to-uf2", binary = "cargo", test_arg = [
+#     "hex-to-uf2",
+#     "--help",
+# ] }
 command = "cargo"
 args = [
     "hex-to-uf2",
@@ -58,10 +58,10 @@ args = [
 dependencies = ["objcopy-central"]
 
 [tasks.uf2-peripheral]
-install_crate = { crate_name = "cargo-hex-to-uf2", binary = "cargo", test_arg = [
-    "hex-to-uf2",
-    "--help",
-] }
+# install_crate = { crate_name = "cargo-hex-to-uf2", binary = "cargo", test_arg = [
+#     "hex-to-uf2",
+#     "--help",
+# ] }
 command = "cargo"
 args = [
     "hex-to-uf2",
