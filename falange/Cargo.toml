@@ -10,6 +10,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+ssd1306 = { version = "0.10.0", features = ["async"] }
+embedded-graphics = "0.8.1"
 rmk = { path = "../rmk", features = [
     "nrf52840_ble",
     "split",

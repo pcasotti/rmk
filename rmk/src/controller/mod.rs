@@ -5,6 +5,8 @@
 
 use embassy_futures::select::{select, Either};
 
+pub mod display;
+
 /// Common trait for controllers.
 pub trait Controller {
     /// Type of the received events
