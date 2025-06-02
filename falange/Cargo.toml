@@ -67,6 +67,9 @@ nrf-sdc = { git = "https://github.com/alexmoon/nrf-sdc.git", rev = "7be9b853e15c
 nrf-mpsl = { git = "https://github.com/alexmoon/nrf-sdc.git", rev = "7be9b853e15ca0404d65c623d1ec5795fd96c204" }
 bt-hci = { git = "https://github.com/embassy-rs/bt-hci", rev = "50c443e088ab9c405e44a10e98915b445ed7b750" }
 
+# bt-hci = { git = "https://github.com/embassy-rs/bt-hci.git", rev = "3755da87d0ef8660c5f9d4694b928ad7f679299a" }
+
+
 [build-dependencies]
 xz2 = "0.1.7"
 json = "0.12"
