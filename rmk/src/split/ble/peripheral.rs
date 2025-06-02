@@ -2,14 +2,13 @@ use embassy_futures::join::join;
 use embassy_futures::select::select;
 use embassy_time::Timer;
 use trouble_host::prelude::*;
+#[cfg(feature = "storage")]
+use {super::PeerAddress, crate::storage::Storage, embedded_storage_async::nor_flash::NorFlash};
 
 use crate::split::driver::{SplitDriverError, SplitReader, SplitWriter};
 use crate::split::peripheral::SplitPeripheral;
 use crate::split::{SplitMessage, SPLIT_MESSAGE_MAX_SIZE};
 use crate::CONNECTION_STATE;
-
-#[cfg(feature = "storage")]
-use {super::PeerAddress, crate::storage::Storage, embedded_storage_async::nor_flash::NorFlash};
 
 /// Gatt service used in split peripheral to send split message to central
 #[gatt_service(uuid = "4dd5fbaa-18e5-4b07-bf0a-353698659946")]
@@ -28,14 +27,14 @@ pub(crate) struct BleSplitPeripheralServer {
 }
 
 /// BLE driver for split peripheral
-pub(crate) struct BleSplitPeripheralDriver<'stack, 'server, 'c> {
+pub(crate) struct BleSplitPeripheralDriver<'stack, 'server, 'c, P: PacketPool> {
     message_to_peripheral: Characteristic<[u8; SPLIT_MESSAGE_MAX_SIZE]>,
     message_to_central: Characteristic<[u8; SPLIT_MESSAGE_MAX_SIZE]>,
-    conn: &'c GattConnection<'stack, 'server>,
+    conn: &'c GattConnection<'stack, 'server, P>,
 }
 
-impl<'stack, 'server, 'c> BleSplitPeripheralDriver<'stack, 'server, 'c> {
-    pub(crate) fn new(server: &'server BleSplitPeripheralServer, conn: &'c GattConnection<'stack, 'server>) -> Self {
+impl<'stack, 'server, 'c, P: PacketPool> BleSplitPeripheralDriver<'stack, 'server, 'c, P> {
+    pub(crate) fn new(server: &'server BleSplitPeripheralServer, conn: &'c GattConnection<'stack, 'server, P>) -> Self {
         Self {
             message_to_central: server.service.message_to_central,
             message_to_peripheral: server.service.message_to_peripheral,
@@ -44,7 +43,7 @@ impl<'stack, 'server, 'c> BleSplitPeripheralDriver<'stack, 'server, 'c> {
     }
 }
 
-impl<'stack, 'server, 'c> SplitReader for BleSplitPeripheralDriver<'stack, 'server, 'c> {
+impl<'stack, 'server, 'c, P: PacketPool> SplitReader for BleSplitPeripheralDriver<'stack, 'server, 'c, P> {
     async fn read(&mut self) -> Result<SplitMessage, SplitDriverError> {
         let message = loop {
             match self.conn.next().await {
@@ -89,7 +88,7 @@ impl<'stack, 'server, 'c> SplitReader for BleSplitPeripheralDriver<'stack, 'serv
     }
 }
 
-impl<'stack, 'server, 'c> SplitWriter for BleSplitPeripheralDriver<'stack, 'server, 'c> {
+impl<'stack, 'server, 'c, P: PacketPool> SplitWriter for BleSplitPeripheralDriver<'stack, 'server, 'c, P> {
     async fn write(&mut self, message: &SplitMessage) -> Result<usize, SplitDriverError> {
         let mut buf = [0_u8; SPLIT_MESSAGE_MAX_SIZE];
         postcard::to_slice(message, &mut buf).map_err(|e| {
@@ -123,7 +122,7 @@ pub async fn initialize_nrf_ble_split_peripheral_and_run<
     const NUM_ENCODER: usize,
 >(
     id: usize,
-    stack: &'stack Stack<'stack, C>,
+    stack: &'stack Stack<'stack, C, DefaultPacketPool>,
     storage: &'s mut Storage<F, ROW, COL, NUM_LAYER, NUM_ENCODER>,
 ) {
     let Host {
@@ -188,9 +187,9 @@ pub async fn initialize_nrf_ble_split_peripheral_and_run<
 async fn split_peripheral_advertise<'a, 'b, C: Controller>(
     id: usize,
     central_addr: Option<[u8; 6]>,
-    peripheral: &mut Peripheral<'a, C>,
+    peripheral: &mut Peripheral<'a, C, DefaultPacketPool>,
     server: &'b BleSplitPeripheralServer<'_>,
-) -> Result<GattConnection<'a, 'b>, BleHostError<C::Error>> {
+) -> Result<GattConnection<'a, 'b, DefaultPacketPool>, BleHostError<C::Error>> {
     let mut advertiser_data = [0; 31];
     let advertisement = match central_addr {
         Some(addr) => Advertisement::ConnectableNonscannableDirected {
@@ -233,7 +232,7 @@ async fn split_peripheral_advertise<'a, 'b, C: Controller>(
 }
 
 /// This is a background task that is required to run forever alongside any other BLE tasks.
-async fn ble_task<C: Controller>(mut runner: Runner<'_, C>) {
+async fn ble_task<C: Controller, P: PacketPool>(mut runner: Runner<'_, C, P>) {
     loop {
         if let Err(e) = runner.run().await {
             panic!("[ble_task] error: {:?}", e);

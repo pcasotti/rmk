@@ -17,23 +17,21 @@ use sequential_storage::Error as SSError;
 use {
     crate::ble::trouble::ble_server::CCCD_TABLE_SIZE,
     crate::ble::trouble::profile::ProfileInfo,
-    trouble_host::{prelude::*, BondInformation, LongTermKey},
+    trouble_host::{prelude::*, BondInformation, IdentityResolvingKey, LongTermKey},
 };
 
 use self::eeconfig::EeKeymapConfig;
 use crate::action::{EncoderAction, KeyAction};
 use crate::channel::FLASH_CHANNEL;
-use crate::combo::{Combo, COMBO_MAX_LENGTH, COMBO_MAX_NUM};
+use crate::combo::Combo;
 use crate::config::StorageConfig;
-use crate::fork::{Fork, StateBits, FORK_MAX_NUM};
+use crate::fork::{Fork, StateBits};
 use crate::hid_state::{HidModifiers, HidMouseButtons};
-use crate::keyboard_macro::MACRO_SPACE_SIZE;
 use crate::light::LedIndicator;
 #[cfg(all(feature = "_ble", feature = "split"))]
 use crate::split::ble::PeerAddress;
-
 use crate::via::keycode_convert::{from_via_keycode, to_via_keycode};
-use crate::BUILD_HASH;
+use crate::{BUILD_HASH, COMBO_MAX_LENGTH, COMBO_MAX_NUM, FORK_MAX_NUM, MACRO_SPACE_SIZE};
 
 /// Signal to synchronize the flash operation status, usually used outside of the flash task.
 /// True if the flash operation is finished correctly, false if the flash operation is finished with error.
@@ -305,30 +303,39 @@ impl Value<'_> for StorageData {
             }
             #[cfg(feature = "_ble")]
             StorageData::BondInfo(b) => {
-                if buffer.len() < 23 + CCCD_TABLE_SIZE * 4 {
+                if buffer.len() < 40 + CCCD_TABLE_SIZE * 4 {
                     return Err(SerializationError::BufferTooSmall);
                 }
                 buffer[0] = StorageKeys::BleBondInfo as u8;
                 let ltk = b.info.ltk.to_le_bytes();
-                let address = b.info.address;
+                let address = b.info.identity.bd_addr;
+                let irk = match b.info.identity.irk {
+                    Some(irk) => irk.to_le_bytes(),
+                    None => [0; 16],
+                };
+                // let (address, irk) = match b.info.identity {
+                //     Identity::BdAddr(address) => (address, [0; 16]),
+                //     Identity::Irk(irk) => (BdAddr::default(), irk.to_le_bytes()),
+                // };
                 buffer[1] = b.slot_num;
                 buffer[2..18].copy_from_slice(&ltk);
                 buffer[18..24].copy_from_slice(address.raw());
+                buffer[24..40].copy_from_slice(&irk);
                 let cccd_table = b.cccd_table.inner();
                 for i in 0..CCCD_TABLE_SIZE {
                     match cccd_table.get(i) {
                         Some(cccd) => {
                             let handle: u16 = cccd.0;
                             let cccd: u16 = cccd.1.raw();
-                            buffer[24 + i * 4..26 + i * 4].copy_from_slice(&handle.to_le_bytes());
-                            buffer[26 + i * 4..28 + i * 4].copy_from_slice(&cccd.to_le_bytes());
+                            buffer[40 + i * 4..42 + i * 4].copy_from_slice(&handle.to_le_bytes());
+                            buffer[42 + i * 4..44 + i * 4].copy_from_slice(&cccd.to_le_bytes());
                         }
                         None => {
-                            buffer[24 + i * 4..28 + i * 4].copy_from_slice(&[0, 0, 0, 0]);
+                            buffer[40 + i * 4..44 + i * 4].copy_from_slice(&[0, 0, 0, 0]);
                         }
                     };
                 }
-                Ok(24 + CCCD_TABLE_SIZE * 4)
+                Ok(40 + CCCD_TABLE_SIZE * 4)
             }
         }
     }
@@ -489,22 +496,42 @@ impl Value<'_> for StorageData {
                 }
                 #[cfg(feature = "_ble")]
                 StorageKeys::BleBondInfo => {
-                    if buffer.len() < 23 + CCCD_TABLE_SIZE * 4 {
+                    if buffer.len() < 40 + CCCD_TABLE_SIZE * 4 {
                         return Err(SerializationError::BufferTooSmall);
                     }
                     let slot_num = buffer[1];
                     let ltk = LongTermKey::from_le_bytes(buffer[2..18].try_into().unwrap());
                     let address = BdAddr::new(buffer[18..24].try_into().unwrap());
+                    let irk = IdentityResolvingKey::from_le_bytes(buffer[24..40].try_into().unwrap());
+                    // Use all 0s as the empty irk
+                    let info = if irk.0 == 0 {
+                        BondInformation::new(
+                            Identity {
+                                bd_addr: address,
+                                irk: None,
+                            },
+                            ltk,
+                        )
+                    } else {
+                        BondInformation::new(
+                            Identity {
+                                bd_addr: address,
+                                irk: Some(irk),
+                            },
+                            ltk,
+                        )
+                    };
+                    // Read info:
                     let mut cccd_table_values = [(0u16, CCCD::default()); CCCD_TABLE_SIZE];
                     for i in 0..CCCD_TABLE_SIZE {
-                        let handle = u16::from_le_bytes(buffer[24 + i * 4..26 + i * 4].try_into().unwrap());
-                        let cccd = u16::from_le_bytes(buffer[26 + i * 4..28 + i * 4].try_into().unwrap());
+                        let handle = u16::from_le_bytes(buffer[40 + i * 4..42 + i * 4].try_into().unwrap());
+                        let cccd = u16::from_le_bytes(buffer[42 + i * 4..44 + i * 4].try_into().unwrap());
                         cccd_table_values[i] = (handle, cccd.into());
                     }
                     Ok(StorageData::BondInfo(ProfileInfo {
                         slot_num,
                         removed: false,
-                        info: BondInformation::new(address, ltk),
+                        info,
                         cccd_table: CccdTable::new(cccd_table_values),
                     }))
                 }
@@ -608,7 +635,7 @@ pub async fn new_storage_for_split_peripheral<F: AsyncNorFlash>(
     flash: F,
     storage_config: StorageConfig,
 ) -> Storage<F, 0, 0, 0, 0> {
-    Storage::<F, 0, 0, 0, 0>::new(flash, &[], &None, storage_config).await
+    Storage::<F, 0, 0, 0, 0>::new(flash, &[], &None, &storage_config).await
 }
 
 pub struct Storage<
@@ -653,7 +680,7 @@ impl<F: AsyncNorFlash, const ROW: usize, const COL: usize, const NUM_LAYER: usiz
         flash: F,
         keymap: &[[[KeyAction; COL]; ROW]; NUM_LAYER],
         encoder_map: &Option<&mut [[EncoderAction; NUM_ENCODER]; NUM_LAYER]>,
-        config: StorageConfig,
+        config: &StorageConfig,
     ) -> Self {
         // Check storage setting
         assert!(
@@ -988,7 +1015,7 @@ impl<F: AsyncNorFlash, const ROW: usize, const COL: usize, const NUM_LAYER: usiz
             .map_err(|e| print_storage_error::<F>(e))?;
 
             if let Some(StorageData::ComboData(combo)) = read_data {
-                let mut actions = Vec::<_, COMBO_MAX_LENGTH>::new();
+                let mut actions: Vec<KeyAction, COMBO_MAX_LENGTH> = Vec::new();
                 for &action in combo.actions.iter().filter(|&&a| a != KeyAction::No) {
                     let _ = actions.push(action);
                 }
@@ -1131,8 +1158,8 @@ impl<F: AsyncNorFlash, const ROW: usize, const COL: usize, const NUM_LAYER: usiz
         )
         .await
         {
-            if config.enable && config.build_hash == BUILD_HASH {
-                // if config.enable {
+            // if config.enable && config.build_hash == BUILD_HASH {
+            if config.enable {
                 return true;
             }
         }
