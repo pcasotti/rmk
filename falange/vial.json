@@ -67,6 +67,11 @@
             "name": "SWITCH",
             "title": "Switch default output mode between USB/BLE",
             "shortName": "Switch\nOutput"
+        },
+        {
+            "name": "CLR_PEER",
+            "title": "Forget the current bonded split peer(central or peripheral)",
+            "shortName": "Clear\nPeer"
         }
     ],
     "layouts": {
