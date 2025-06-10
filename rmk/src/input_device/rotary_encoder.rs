@@ -282,9 +282,86 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
                 // Accept only limited keys for rotary encoder
                 if let KeyAction::Single(Action::Key(keycode)) = action {
+                    let delta = 20;
                     match keycode {
                         k if keycode.is_consumer() => {
                             self.tap_media_key(k.as_consumer_control_usage_id()).await;
+                        }
+                        KeyCode::MouseUp => {
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: 0,
+                                y: -delta,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                            embassy_time::Timer::after_millis(2).await;
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: 0,
+                                y: 0,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                        }
+                        KeyCode::MouseDown => {
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: 0,
+                                y: delta,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                            embassy_time::Timer::after_millis(2).await;
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: 0,
+                                y: 0,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                        }
+                        KeyCode::MouseLeft => {
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: -delta,
+                                y: 0,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                            embassy_time::Timer::after_millis(2).await;
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: 0,
+                                y: 0,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                        }
+                        KeyCode::MouseRight => {
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: delta,
+                                y: 0,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
+                            embassy_time::Timer::after_millis(2).await;
+                            self.send_report(Report::MouseReport(MouseReport {
+                                buttons: 0,
+                                x: 0,
+                                y: 0,
+                                wheel: 0,
+                                pan: 0,
+                            }))
+                            .await;
                         }
                         KeyCode::MouseWheelUp => {
                             self.send_report(Report::MouseReport(MouseReport {
