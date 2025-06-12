@@ -13,7 +13,9 @@ export default defineConfig({
   themeConfig: {
     logo: '/images/rmk_logo.svg',
     nav: nav(),
-
+    outline: {
+      level: 'deep'
+    },
     sidebar: {
       '/docs/': { base: '/docs/', items: sidebarGuide() }
     },
@@ -79,8 +81,21 @@ function nav() {
   return [
     { text: 'Guide', link: '/docs/user_guide/1_guide_overview' },
     { text: 'Documentation', link: '/docs/introduction' },
-    { text: 'API', link: 'https://docs.rs/rmk/latest/rmk/' },
-    // {text:'CustomBlockEx',link:"/docs/custom-block-ex"}
+    {
+      text: `v0.7.2`,
+      items: [
+        {
+          items: [{ text: 'v0.7.2', link: '/docs/introduction' }]
+        },
+        {
+          items: [{ text: 'Migration Guide', link: '/docs/migration_guide' }]
+        },
+        {
+          items: [{ text: 'v0.6.1', link: 'https://haobogu.github.io/rmk' }]
+        }
+      ]
+    },
+    { text: 'API', link: 'https://docs.rs/rmk/latest/rmk/' }
   ]
 }
 function sidebarGuide() {
@@ -112,6 +127,10 @@ function sidebarGuide() {
         { text: 'FAQs', link: 'user_guide/faq' },
         { text: 'Real World Examples', link: 'user_guide/real_world_examples' }
       ]
+    },
+    {
+      text: 'Migration Guide',
+      items: [{ text: 'From v0.6 to v0.7', link: 'migration_guide' }]
     },
     {
       text: 'Features',

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use config::{Config, File, FileFormat};
 use serde::de;
@@ -136,51 +137,51 @@ impl Default for RmkConstantsConfig {
 #[allow(unused)]
 pub struct KeyboardTomlConfig {
     /// Basic keyboard info
-    pub keyboard: Option<KeyboardInfo>,
+    keyboard: Option<KeyboardInfo>,
     /// Matrix of the keyboard, only for non-split keyboards
-    pub matrix: Option<MatrixConfig>,
+    matrix: Option<MatrixConfig>,
     // Aliases for key maps
-    pub aliases: Option<HashMap<String, String>>,
+    aliases: Option<HashMap<String, String>>,
     // Layers of key maps
-    pub layer: Option<Vec<LayerTomlConfig>>,
+    layer: Option<Vec<LayerTomlConfig>>,
     /// Layout config.
     /// For split keyboard, the total row/col should be defined in this section
-    pub layout: Option<LayoutTomlConfig>,
+    layout: Option<LayoutTomlConfig>,
     /// Behavior config
-    pub behavior: Option<BehaviorConfig>,
+    behavior: Option<BehaviorConfig>,
     /// Light config
-    pub light: Option<LightConfig>,
+    light: Option<LightConfig>,
     /// Storage config
-    pub storage: Option<StorageConfig>,
+    storage: Option<StorageConfig>,
     /// Ble config
-    pub ble: Option<BleConfig>,
+    ble: Option<BleConfig>,
     /// Dependency config
-    pub dependency: Option<DependencyConfig>,
+    dependency: Option<DependencyConfig>,
     /// Split config
-    pub split: Option<SplitConfig>,
+    split: Option<SplitConfig>,
     /// Input device config
-    pub input_device: Option<InputDeviceConfig>,
+    input_device: Option<InputDeviceConfig>,
     /// RMK config constants
     #[serde(default)]
     pub rmk: RmkConstantsConfig,
 }
 
 impl KeyboardTomlConfig {
-    pub fn new_from_toml_str(config_toml_path: &str) -> Self {
+    pub fn new_from_toml_str<P: AsRef<Path>>(config_toml_path: P) -> Self {
         // The first run, load chip model only
-        let user_config = match std::fs::read_to_string(config_toml_path) {
+        let user_config = match std::fs::read_to_string(config_toml_path.as_ref()) {
             Ok(s) => match toml::from_str::<KeyboardTomlConfig>(&s) {
                 Ok(c) => c,
-                Err(e) => panic!("Parse {} error: {}", config_toml_path, e.message()),
+                Err(e) => panic!("Parse {:?} error: {}", config_toml_path.as_ref(), e.message()),
             },
-            Err(e) => panic!("Read keyboard config file {} error: {}", config_toml_path, e),
+            Err(e) => panic!("Read keyboard config file {:?} error: {}", config_toml_path.as_ref(), e),
         };
         let default_config_str = user_config.get_chip_model().unwrap().get_default_config_str().unwrap();
 
         // The second run, load the user config and merge with the default config
         Config::builder()
             .add_source(File::from_str(default_config_str, FileFormat::Toml))
-            .add_source(File::with_name(config_toml_path))
+            .add_source(File::with_name(config_toml_path.as_ref().to_str().unwrap()))
             .build()
             .unwrap()
             .try_deserialize()

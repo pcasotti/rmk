@@ -22,6 +22,8 @@ use core::cell::RefCell;
 use core::future::Future;
 use core::sync::atomic::Ordering;
 
+#[cfg(feature = "_ble")]
+use bt_hci::{cmd::le::LeSetPhy, controller::ControllerCmdAsync};
 use config::{RmkConfig, VialConfig};
 use embassy_futures::select::{select4, Either4};
 #[cfg(not(any(cortex_m)))]
@@ -71,6 +73,7 @@ mod boot;
 pub mod channel;
 pub mod combo;
 pub mod config;
+#[cfg(feature = "controller")]
 pub mod controller;
 pub mod debounce;
 pub mod direct_pin;
@@ -174,7 +177,7 @@ pub async fn initialize_keymap_and_storage<
 pub async fn run_rmk<
     'a,
     'b,
-    #[cfg(feature = "_ble")] C: Controller,
+    #[cfg(feature = "_ble")] C: Controller + ControllerCmdAsync<LeSetPhy>,
     #[cfg(feature = "storage")] F: AsyncNorFlash,
     #[cfg(not(feature = "_no_usb"))] D: Driver<'static>, // TODO: remove the static lifetime
     Out: OutputPin,
