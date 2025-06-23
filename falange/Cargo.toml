@@ -17,7 +17,9 @@ rmk = { path = "../rmk", default-features = false, features = [
     "adafruit_bl",
     "col2row",
     "storage",
-    "usb_log",
+    "controller",
+    "defmt",
+    # "usb_log",
 ] }
 nrf-sdc = { version = "0.1.0", default-features = false, features = [
     "defmt",

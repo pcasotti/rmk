@@ -29,6 +29,7 @@
             flip-link
             elf2uf2-rs
             libclang
+            probe-rs
           ];
           LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
         };
