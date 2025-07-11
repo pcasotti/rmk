@@ -23,7 +23,10 @@ use core::future::Future;
 use core::sync::atomic::Ordering;
 
 #[cfg(feature = "_ble")]
-use bt_hci::{cmd::le::LeSetPhy, controller::ControllerCmdAsync};
+use bt_hci::{
+    cmd::le::{LeReadLocalSupportedFeatures, LeSetPhy},
+    controller::{ControllerCmdAsync, ControllerCmdSync},
+};
 use config::{RmkConfig, VialConfig};
 use controller::display::DisplayController;
 #[cfg(feature = "controller")]
@@ -80,7 +83,7 @@ pub mod config;
 #[cfg(feature = "controller")]
 pub mod controller;
 pub mod debounce;
-pub(crate) mod descriptor;
+pub mod descriptor;
 pub mod direct_pin;
 pub mod event;
 pub mod fork;
@@ -99,8 +102,10 @@ pub mod split;
 pub mod state;
 #[cfg(feature = "storage")]
 pub mod storage;
+pub mod tap_dance;
+pub mod tap_hold;
 #[cfg(not(feature = "_no_usb"))]
-pub(crate) mod usb;
+pub mod usb;
 pub mod via;
 
 pub async fn initialize_keymap<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize>(
@@ -182,10 +187,10 @@ pub async fn initialize_keymap_and_storage<
 #[allow(unreachable_code)]
 pub async fn run_rmk<
     'a,
-    'b,
-    #[cfg(feature = "_ble")] C: Controller + ControllerCmdAsync<LeSetPhy>,
+    #[cfg(feature = "_ble")] 'b,
+    #[cfg(feature = "_ble")] C: Controller + ControllerCmdAsync<LeSetPhy> + ControllerCmdSync<LeReadLocalSupportedFeatures>,
     #[cfg(feature = "storage")] F: AsyncNorFlash,
-    #[cfg(not(feature = "_no_usb"))] D: Driver<'static>, // TODO: remove the static lifetime
+    #[cfg(not(feature = "_no_usb"))] D: Driver<'static>,
     Out: OutputPin,
     const ROW: usize,
     const COL: usize,

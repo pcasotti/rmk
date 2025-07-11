@@ -30,8 +30,9 @@ use crate::hid_state::{HidModifiers, HidMouseButtons};
 use crate::light::LedIndicator;
 #[cfg(all(feature = "_ble", feature = "split"))]
 use crate::split::ble::PeerAddress;
+use crate::tap_dance::TapDance;
 use crate::via::keycode_convert::{from_via_keycode, to_via_keycode};
-use crate::{BUILD_HASH, COMBO_MAX_LENGTH, COMBO_MAX_NUM, FORK_MAX_NUM, MACRO_SPACE_SIZE};
+use crate::{BUILD_HASH, COMBO_MAX_LENGTH, COMBO_MAX_NUM, FORK_MAX_NUM, MACRO_SPACE_SIZE, TAP_DANCE_MAX_NUM};
 
 /// Signal to synchronize the flash operation status, usually used outside of the flash task.
 /// True if the flash operation is finished correctly, false if the flash operation is finished with error.
@@ -79,6 +80,8 @@ pub(crate) enum FlashOperationMessage {
     WriteCombo(ComboData),
     // Write fork
     WriteFork(ForkData),
+    // Write tap dance
+    WriteTapDance(TapDanceData),
 }
 
 /// StorageKeys is the prefix digit stored in the flash, it's used to identify the type of the stored data.
@@ -98,6 +101,7 @@ pub(crate) enum StorageKeys {
     ConnectionType,
     EncoderKeys,
     ForkData,
+    TapDanceData,
     #[cfg(all(feature = "_ble", feature = "split"))]
     PeerAddress = 0xED,
     #[cfg(feature = "_ble")]
@@ -120,6 +124,7 @@ impl StorageKeys {
             8 => Some(StorageKeys::ConnectionType),
             9 => Some(StorageKeys::EncoderKeys),
             10 => Some(StorageKeys::ForkData),
+            11 => Some(StorageKeys::TapDanceData),
             #[cfg(all(feature = "_ble", feature = "split"))]
             0xED => Some(StorageKeys::PeerAddress),
             #[cfg(feature = "_ble")]
@@ -139,11 +144,11 @@ pub(crate) enum StorageData {
     KeymapConfig(EeKeymapConfig),
     KeymapKey(KeymapKey),
     EncoderConfig(EncoderConfig),
-    // TODO: To reduce the size of this enum, is it worth to store macro data in another storage?
     MacroData([u8; MACRO_SPACE_SIZE]),
     ComboData(ComboData),
     ConnectionType(u8),
     ForkData(ForkData),
+    TapDanceData(TapDanceData),
     #[cfg(all(feature = "_ble", feature = "split"))]
     PeerAddress(PeerAddress),
     #[cfg(feature = "_ble")]
@@ -183,6 +188,11 @@ pub(crate) fn get_fork_key(idx: usize) -> u32 {
 /// Get the key to retrieve the peer address from the storage.
 pub(crate) fn get_peer_address_key(peer_id: u8) -> u32 {
     0x6000 + peer_id as u32
+}
+
+/// Get the key to retrieve the tap dance from the storage.
+pub(crate) fn get_tap_dance_key(idx: usize) -> u32 {
+    (0x7000 + idx) as u32
 }
 
 impl Value<'_> for StorageData {
@@ -236,8 +246,20 @@ impl Value<'_> for StorageData {
                     return Err(SerializationError::BufferTooSmall);
                 }
                 buffer[0] = StorageKeys::MacroData as u8;
-                buffer[1..MACRO_SPACE_SIZE + 1].copy_from_slice(d);
-                Ok(MACRO_SPACE_SIZE + 1)
+                let mut idx = MACRO_SPACE_SIZE - 1;
+                // Check from the end of the macro buffer, find the first non-zero byte
+                while let Some(b) = d.get(idx) {
+                    if *b != 0 || idx == 0 {
+                        break;
+                    }
+                    idx -= 1;
+                }
+                let data_len = idx + 1;
+                // Macro data length
+                buffer[1..3].copy_from_slice(&(data_len as u16).to_le_bytes());
+                // Macro data
+                buffer[3..3 + data_len].copy_from_slice(&d[..data_len]);
+                Ok(data_len + 3)
             }
             StorageData::ComboData(combo) => {
                 if buffer.len() < 3 + COMBO_MAX_LENGTH * 2 {
@@ -278,6 +300,18 @@ impl Value<'_> for StorageData {
                         | if fork.bindable { 1 << 24 } else { 0 },
                 );
                 Ok(15)
+            }
+            StorageData::TapDanceData(tap_dance) => {
+                if buffer.len() < 11 {
+                    return Err(SerializationError::BufferTooSmall);
+                }
+                buffer[0] = StorageKeys::TapDanceData as u8;
+                BigEndian::write_u16(&mut buffer[1..3], to_via_keycode(tap_dance.tap));
+                BigEndian::write_u16(&mut buffer[3..5], to_via_keycode(tap_dance.hold));
+                BigEndian::write_u16(&mut buffer[5..7], to_via_keycode(tap_dance.hold_after_tap));
+                BigEndian::write_u16(&mut buffer[7..9], to_via_keycode(tap_dance.double_tap));
+                BigEndian::write_u16(&mut buffer[9..11], tap_dance.tapping_term_ms);
+                Ok(11)
             }
             StorageData::ConnectionType(ty) => {
                 buffer[0] = StorageKeys::ConnectionType as u8;
@@ -396,11 +430,16 @@ impl Value<'_> for StorageData {
                     }))
                 }
                 StorageKeys::MacroData => {
-                    if buffer.len() < MACRO_SPACE_SIZE + 1 {
+                    if buffer.len() < 3 {
                         return Err(SerializationError::InvalidData);
                     }
                     let mut buf = [0_u8; MACRO_SPACE_SIZE];
-                    buf.copy_from_slice(&buffer[1..MACRO_SPACE_SIZE + 1]);
+                    let macro_length = u16::from_le_bytes(buffer[1..3].try_into().unwrap()) as usize;
+                    if macro_length > MACRO_SPACE_SIZE + 1 || buffer.len() < 3 + macro_length {
+                        // Check length
+                        return Err(SerializationError::InvalidData);
+                    }
+                    buf[0..macro_length].copy_from_slice(&buffer[3..3 + macro_length]);
                     Ok(StorageData::MacroData(buf))
                 }
                 StorageKeys::ComboData => {
@@ -470,6 +509,24 @@ impl Value<'_> for StorageData {
                         match_none,
                         kept_modifiers,
                         bindable,
+                    }))
+                }
+                StorageKeys::TapDanceData => {
+                    if buffer.len() < 11 {
+                        return Err(SerializationError::InvalidData);
+                    }
+                    let tap = from_via_keycode(BigEndian::read_u16(&buffer[1..3]));
+                    let hold = from_via_keycode(BigEndian::read_u16(&buffer[3..5]));
+                    let hold_after_tap = from_via_keycode(BigEndian::read_u16(&buffer[5..7]));
+                    let double_tap = from_via_keycode(BigEndian::read_u16(&buffer[7..9]));
+                    let tapping_term_ms = BigEndian::read_u16(&buffer[9..11]);
+                    Ok(StorageData::TapDanceData(TapDanceData {
+                        idx: 0,
+                        tap,
+                        hold,
+                        hold_after_tap,
+                        double_tap,
+                        tapping_term_ms,
                     }))
                 }
                 #[cfg(all(feature = "_ble", feature = "split"))]
@@ -562,6 +619,9 @@ impl StorageData {
             StorageData::ForkData(_) => {
                 panic!("To get fork key for ForkData, use `get_fork_key` instead");
             }
+            StorageData::TapDanceData(_) => {
+                panic!("To get tap dance key for TapDanceData, use `get_tap_dance_key` instead");
+            }
             #[cfg(all(feature = "_ble", feature = "split"))]
             StorageData::PeerAddress(p) => get_peer_address_key(p.peer_id),
             #[cfg(feature = "_ble")]
@@ -624,6 +684,17 @@ pub(crate) struct ForkData {
     pub(crate) match_none: StateBits,
     pub(crate) kept_modifiers: HidModifiers,
     pub(crate) bindable: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub(crate) struct TapDanceData {
+    pub(crate) idx: usize,
+    pub(crate) tap: KeyAction,
+    pub(crate) hold: KeyAction,
+    pub(crate) hold_after_tap: KeyAction,
+    pub(crate) double_tap: KeyAction,
+    pub(crate) tapping_term_ms: u16,
 }
 
 pub fn async_flash_wrapper<F: NorFlash>(flash: F) -> BlockingAsync<F> {
@@ -875,6 +946,18 @@ impl<F: AsyncNorFlash, const ROW: usize, const COL: usize, const NUM_LAYER: usiz
                     )
                     .await
                 }
+                FlashOperationMessage::WriteTapDance(tap_dance) => {
+                    let key = get_tap_dance_key(tap_dance.idx);
+                    store_item(
+                        &mut self.flash,
+                        self.storage_range.clone(),
+                        &mut storage_cache,
+                        &mut self.buffer,
+                        &key,
+                        &StorageData::TapDanceData(tap_dance),
+                    )
+                    .await
+                }
                 #[cfg(all(feature = "_ble", feature = "split"))]
                 FlashOperationMessage::PeerAddress(peer) => {
                     let key = get_peer_address_key(peer.peer_id);
@@ -1060,6 +1143,36 @@ impl<F: AsyncNorFlash, const ROW: usize, const COL: usize, const NUM_LAYER: usiz
         Ok(())
     }
 
+    pub(crate) async fn read_tap_dances(
+        &mut self,
+        tap_dances: &mut Vec<TapDance, TAP_DANCE_MAX_NUM>,
+    ) -> Result<(), ()> {
+        for (i, item) in tap_dances.iter_mut().enumerate() {
+            let key = get_tap_dance_key(i);
+            let read_data = fetch_item::<u32, StorageData, _>(
+                &mut self.flash,
+                self.storage_range.clone(),
+                &mut NoCache::new(),
+                &mut self.buffer,
+                &key,
+            )
+            .await
+            .map_err(|e| print_storage_error::<F>(e))?;
+
+            if let Some(StorageData::TapDanceData(tap_dance)) = read_data {
+                *item = TapDance::new(
+                    tap_dance.tap,
+                    tap_dance.hold,
+                    tap_dance.hold_after_tap,
+                    tap_dance.double_tap,
+                    embassy_time::Duration::from_millis(tap_dance.tapping_term_ms as u64),
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     async fn initialize_storage_with_config(
         &mut self,
         keymap: &[[[KeyAction; COL]; ROW]; NUM_LAYER],
@@ -1238,6 +1351,7 @@ fn print_storage_error<F: AsyncNorFlash>(e: SSError<F::Error>) {
         SSError::BufferTooBig => error!("Buffer too big"),
         SSError::BufferTooSmall(x) => error!("Buffer too small, needs {} bytes", x),
         SSError::SerializationError(e) => error!("Map value error: {}", e),
+        SSError::ItemTooBig => error!("Item too big"),
         _ => error!("Unknown storage error"),
     }
 }

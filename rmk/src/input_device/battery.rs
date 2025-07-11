@@ -131,7 +131,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             Event::Battery(val) => {
                 let battery_percent = self.get_battery_percent(val);
 
-                debug!("Detected battery ADC value: {:?} ({:?}%)", val, battery_percent);
+                trace!("Detected battery ADC value: {:?} ({:?}%)", val, battery_percent);
 
                 #[cfg(feature = "controller")]
                 send_controller_event(&mut self.controller_pub, ControllerEvent::Battery(battery_percent));
@@ -175,6 +175,6 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
 
     /// Get the current keymap
     fn get_keymap(&self) -> &RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>> {
-        return self.keymap;
+        self.keymap
     }
 }

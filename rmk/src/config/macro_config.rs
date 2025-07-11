@@ -2,7 +2,7 @@ use crate::MACRO_SPACE_SIZE;
 
 #[derive(Debug)]
 pub struct KeyboardMacrosConfig {
-    /// macros stored in biunary format to be compatible with Vial
+    /// macros stored in binary format to be compatible with Vial
     pub macro_sequences: [u8; MACRO_SPACE_SIZE],
 }
 

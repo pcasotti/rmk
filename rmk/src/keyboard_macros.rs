@@ -149,7 +149,7 @@ pub fn to_macro_sequence(text: &str) -> heapless::Vec<MacroOperation, MACRO_SPAC
         .collect()
 }
 
-/// converts macro sequences [Vec<MacroOperation] binary form and flattens to Vec<u8, MACRO_SPACE_SIZE>
+/// converts macro sequences [Vec<MacroOperation>] binary form and flattens to [Vec<u8, MACRO_SPACE_SIZE>]
 /// Note that the Vec is still at it's minimal needed length and needs to be etended with zeros to the desired size
 /// (with vec.resize())
 fn fold_to_binary(

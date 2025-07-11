@@ -49,11 +49,7 @@ impl Not for StateBits {
 
 impl StateBits {
     pub const fn new_from(modifiers: HidModifiers, leds: LedIndicator, mouse: HidMouseButtons) -> Self {
-        StateBits {
-            modifiers: modifiers,
-            leds: leds,
-            mouse: mouse,
-        }
+        StateBits { modifiers, leds, mouse }
     }
 }
 
@@ -129,6 +125,7 @@ impl Fork {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ActiveFork {
     pub(crate) replacement: KeyAction, // the final replacement decision of the full fork chain
     pub(crate) suppress: HidModifiers, // aggregate the chain's match_any modifiers here
