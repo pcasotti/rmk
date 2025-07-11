@@ -18,8 +18,8 @@ rmk = { path = "../rmk", default-features = false, features = [
     "col2row",
     "storage",
     "controller",
-    "defmt",
-    # "usb_log",
+    # "defmt",
+    "usb_log",
 ] }
 nrf-sdc = { version = "0.1.0", default-features = false, features = [
     "defmt",
