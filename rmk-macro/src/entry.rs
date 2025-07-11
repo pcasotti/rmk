@@ -76,8 +76,11 @@ pub(crate) fn rmk_entry_select(
                 keyboard.run(),
             };
             if split_config.connection == "ble" {
+                let twim = quote! {
+                    ::embassy_nrf::twim::Twim::new(p.TWISPI0, Irqs, p.P0_17, p.P0_20, Default::default(), &mut [])
+                };
                 let rmk_task = quote! {
-                    ::rmk::run_rmk(&keymap, driver, &stack, #storage &mut light_controller, rmk_config),
+                    ::rmk::run_rmk(&keymap, driver, &stack, #storage &mut light_controller, rmk_config, #twim),
                 };
                 let mut tasks = vec![devices_task, rmk_task, keyboard_task];
                 if !processors.is_empty() {

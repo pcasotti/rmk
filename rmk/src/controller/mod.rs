@@ -4,6 +4,7 @@
 //! The `Controller` trait provides the interface for individual output device controllers, and the macros facilitate their concurrent execution.
 
 pub(crate) mod wpm;
+pub(crate) mod display;
 
 use embassy_futures::select::{select, Either};
 
@@ -108,7 +109,7 @@ pub trait PollingController: Controller {
             let elapsed = last.elapsed();
 
             match select(
-                embassy_time::Timer::after(Self::INTERVAL - elapsed),
+                embassy_time::Timer::after(Self::INTERVAL.checked_sub(elapsed).unwrap_or(embassy_time::Duration::MIN)),
                 self.next_message(),
             )
             .await

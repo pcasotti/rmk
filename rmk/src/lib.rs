@@ -25,6 +25,7 @@ use core::sync::atomic::Ordering;
 #[cfg(feature = "_ble")]
 use bt_hci::{cmd::le::LeSetPhy, controller::ControllerCmdAsync};
 use config::{RmkConfig, VialConfig};
+use controller::display::DisplayController;
 #[cfg(feature = "controller")]
 use controller::{wpm::WpmController, PollingController};
 use descriptor::ViaReport;
@@ -40,6 +41,7 @@ use hid::{HidReaderTrait, HidWriterTrait, RunnableHidWriter};
 use keymap::KeyMap;
 use light::{LedIndicator, LightService};
 use matrix::MatrixTrait;
+use ssd1306::{mode::DisplayConfigAsync, prelude::{DisplayRotation, I2CInterface}, size::DisplaySize128x32, I2CDisplayInterface, Ssd1306Async};
 use state::CONNECTION_STATE;
 #[cfg(feature = "_ble")]
 use trouble_host::prelude::*;
@@ -196,10 +198,21 @@ pub async fn run_rmk<
     #[cfg(feature = "storage")] storage: &mut Storage<F, ROW, COL, NUM_LAYER, NUM_ENCODER>,
     light_controller: &mut LightController<Out>,
     rmk_config: RmkConfig<'static>,
+    twim: embassy_nrf::twim::Twim<'a, embassy_nrf::peripherals::TWISPI0>,
 ) -> ! {
+    let interface = I2CDisplayInterface::new(twim);
+    let mut display = Ssd1306Async::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_buffered_graphics_mode();
+    // let r = display.init().await;
+    let mut display_controller = DisplayController::new(display);
+
     // Dispatch the keyboard runner
     #[cfg(feature = "_ble")]
-    crate::ble::trouble::run_ble(
+    embassy_futures::join::join(async {
+        loop {
+            display_controller.unset_init();
+            display_controller.polling_loop().await;
+        }
+    }, crate::ble::trouble::run_ble(
         keymap,
         #[cfg(not(feature = "_no_usb"))]
         usb_driver,
@@ -209,7 +222,7 @@ pub async fn run_rmk<
         storage,
         light_controller,
         rmk_config,
-    )
+    ))
     .await;
 
     // USB keyboard

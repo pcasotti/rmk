@@ -129,10 +129,12 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     async fn process(&mut self, event: Event) -> ProcessResult {
         match event {
             Event::Battery(val) => {
-                debug!("Detected battery ADC value: {:?}", val);
+                let battery_percent = self.get_battery_percent(val);
+
+                debug!("Detected battery ADC value: {:?} ({:?}%)", val, battery_percent);
 
                 #[cfg(feature = "controller")]
-                send_controller_event(&mut self.controller_pub, ControllerEvent::Battery(val));
+                send_controller_event(&mut self.controller_pub, ControllerEvent::Battery(battery_percent));
 
                 #[cfg(feature = "_ble")]
                 {
@@ -141,7 +143,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                     if current_value < 100 || current_value == 255 {
                         // When charging, don't update the battery level(which is inaccurate)
                         crate::ble::trouble::battery_service::BATTERY_LEVEL
-                            .store(self.get_battery_percent(val), core::sync::atomic::Ordering::Relaxed);
+                            .store(battery_percent, core::sync::atomic::Ordering::Relaxed);
                     }
                 }
                 ProcessResult::Stop
