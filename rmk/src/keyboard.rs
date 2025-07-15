@@ -1647,7 +1647,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                     MacroOperation::Tap(k) => {
                         self.macro_texting = false;
                         self.register_key(k, key_event);
-                        self.send_keyboard_report_with_resolved_modifiers(true).await;
+                        // self.send_keyboard_report_with_resolved_modifiers(true).await;
                         embassy_time::Timer::after_millis(2).await;
                         key_event.pressed = false;
                         self.process_action_keycode(k, key_event).await;

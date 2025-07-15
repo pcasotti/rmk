@@ -3,6 +3,7 @@ use bt_hci::{cmd::le::LeSetPhy, controller::ControllerCmdAsync};
 use embassy_futures::select::select3;
 #[cfg(not(feature = "_ble"))]
 use embedded_io_async::{Read, Write};
+use ssd1306::{prelude::DisplayRotation, size::DisplaySize128x32, I2CDisplayInterface, Ssd1306Async};
 #[cfg(all(feature = "_ble", feature = "storage"))]
 use {super::ble::PeerAddress, crate::channel::FLASH_CHANNEL};
 #[cfg(feature = "_ble")]
@@ -11,6 +12,8 @@ use {crate::storage::Storage, embedded_storage_async::nor_flash::NorFlash, troub
 use super::driver::{SplitReader, SplitWriter};
 use super::SplitMessage;
 use crate::channel::{EVENT_CHANNEL, KEY_EVENT_CHANNEL};
+#[cfg(feature = "controller")]
+use crate::controller::{display::DisplayController, wpm::WpmController, PollingController};
 #[cfg(not(feature = "_ble"))]
 use crate::split::serial::SerialSplitDriver;
 use crate::state::ConnectionState;
@@ -39,7 +42,13 @@ pub async fn run_rmk_split_peripheral<
     #[cfg(feature = "_ble")] stack: &'a Stack<'a, C, DefaultPacketPool>,
     #[cfg(feature = "_ble")] storage: &'b mut Storage<F, ROW, COL, NUM_LAYER, NUM_ENCODER>,
     #[cfg(not(feature = "_ble"))] serial: S,
+    #[cfg(feature = "_ble")] twim: embassy_nrf::twim::Twim<'a, embassy_nrf::peripherals::TWISPI0>,
 ) {
+    let interface = I2CDisplayInterface::new(twim);
+    let mut display = Ssd1306Async::new(interface, DisplaySize128x32, DisplayRotation::Rotate0).into_buffered_graphics_mode();
+    // let r = display.init().await;
+    let mut display_controller = DisplayController::new(display);
+
     #[cfg(not(feature = "_ble"))]
     {
         let mut peripheral = SplitPeripheral::new(SerialSplitDriver::new(serial));
@@ -49,7 +58,12 @@ pub async fn run_rmk_split_peripheral<
     }
 
     #[cfg(feature = "_ble")]
-    crate::split::ble::peripheral::initialize_nrf_ble_split_peripheral_and_run(id, stack, storage).await;
+    embassy_futures::join::join(async {
+        loop {
+            display_controller.unset_init();
+            display_controller.polling_loop().await;
+        }
+    }, crate::split::ble::peripheral::initialize_nrf_ble_split_peripheral_and_run(id, stack, storage)).await;
 }
 
 /// The split peripheral instance.
