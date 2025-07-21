@@ -9,9 +9,11 @@ use usbd_hid::descriptor::{AsInputReport, MediaKeyboardReport, MouseReport, Syst
 use crate::channel::KEYBOARD_REPORT_CHANNEL;
 use crate::descriptor::KeyboardReport;
 use crate::state::ConnectionState;
+#[cfg(not(feature = "_no_usb"))]
+use crate::usb::USB_REMOTE_WAKEUP;
 use crate::CONNECTION_STATE;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub enum Report {
     /// Normal keyboard hid report
     KeyboardReport(KeyboardReport),
@@ -41,7 +43,7 @@ pub enum HidError {
 /// HidWriter trait is used for reporting HID messages to the host, via USB, BLE, etc.
 pub trait HidWriterTrait {
     /// The report type that the reporter receives from input processors.
-    type ReportType: AsInputReport;
+    type ReportType: AsInputReport + Clone;
 
     /// Write report to the host, return the number of bytes written if success.
     fn write_report(&mut self, report: Self::ReportType) -> impl Future<Output = Result<usize, HidError>>;
@@ -60,9 +62,19 @@ pub trait RunnableHidWriter: HidWriterTrait {
                 let report = self.get_report().await;
                 // Only send the report after the connection is established.
                 if CONNECTION_STATE.load(Ordering::Acquire) == ConnectionState::Connected.into() {
-                    match self.write_report(report).await {
-                        Ok(_) => continue,
-                        Err(e) => error!("Failed to send report: {:?}", e),
+                    if let Err(e) = self.write_report(report.clone()).await {
+                        error!("Failed to send report: {:?}", e);
+                        #[cfg(not(feature = "_no_usb"))]
+                        // If the USB endpoint is disabled, try wakeup
+                        if let HidError::UsbEndpointError(EndpointError::Disabled) = e {
+                            USB_REMOTE_WAKEUP.signal(());
+                            // Wait 200ms for the wakeup, then send the report again
+                            // Ignore the error for the second send
+                            embassy_time::Timer::after_millis(200).await;
+                            if let Err(e) = self.write_report(report).await {
+                                error!("Failed to send report after wakeup: {:?}", e);
+                            }
+                        }
                     };
                 }
             }
@@ -104,4 +116,34 @@ impl RunnableHidWriter for DummyWriter {
     async fn get_report(&mut self) -> Self::ReportType {
         panic!("`get_report` in Dummy writer should not be used");
     }
+}
+
+#[cfg(feature = "_nrf_ble")]
+pub(crate) fn get_serial_number() -> &'static str {
+    use heapless::String;
+    use static_cell::StaticCell;
+
+    static SERIAL: StaticCell<String<20>> = StaticCell::new();
+
+    let serial = SERIAL.init_with(|| {
+        let ficr = embassy_nrf::pac::FICR;
+        let device_id = (u64::from(ficr.deviceid(1).read()) << 32) | u64::from(ficr.deviceid(0).read());
+
+        let mut result = String::new();
+        let _ = result.push_str("vial:f64c2b3c:");
+
+        // Hex lookup table
+        const HEX_TABLE: &[u8] = b"0123456789abcdef";
+        // Add 6 hex digits to the serial number, as the serial str in BLE Device Information Service is limited to 20 bytes
+        for i in 0..6 {
+            let digit = (device_id >> (60 - i * 4)) & 0xF;
+            // This index access is safe because digit is guaranteed to be in the range of 0-15
+            let hex_char = HEX_TABLE[digit as usize] as char;
+            let _ = result.push(hex_char);
+        }
+
+        result
+    });
+
+    serial.as_str()
 }

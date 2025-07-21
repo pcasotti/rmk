@@ -27,9 +27,9 @@ use {
     crate::state::get_connection_type,
     crate::usb::UsbKeyboardWriter,
     crate::usb::{add_usb_reader_writer, add_usb_writer, new_usb_builder},
-    crate::usb::{USB_ENABLED, USB_SUSPENDED},
+    crate::usb::{USB_ENABLED, USB_REMOTE_WAKEUP, USB_SUSPENDED},
     crate::via::UsbVialReaderWriter,
-    embassy_futures::select::{select4, Either4},
+    embassy_futures::select::{select4, Either, Either4},
     embassy_usb::driver::Driver,
 };
 #[cfg(feature = "storage")]
@@ -109,6 +109,11 @@ pub(crate) async fn run_ble<
     light_controller: &mut LightController<Out>,
     mut rmk_config: RmkConfig<'static>,
 ) {
+    #[cfg(feature = "_nrf_ble")]
+    {
+        rmk_config.usb_config.serial_number = crate::hid::get_serial_number();
+    }
+
     // Initialize usb device and usb hid reader/writer
     #[cfg(not(feature = "_no_usb"))]
     let (mut _usb_builder, mut keyboard_reader, mut keyboard_writer, mut other_writer, mut vial_reader_writer) = {
@@ -210,13 +215,29 @@ pub(crate) async fn run_ble<
         )
         .unwrap();
 
+    #[cfg(not(feature = "_no_usb"))]
+    let usb_task = async {
+        loop {
+            usb_device.run_until_suspend().await;
+            match select(usb_device.wait_resume(), USB_REMOTE_WAKEUP.wait()).await {
+                Either::First(_) => continue,
+                Either::Second(_) => {
+                    info!("USB wakeup remote");
+                    if let Err(e) = usb_device.remote_wakeup().await {
+                        info!("USB wakeup remote error: {:?}", e)
+                    }
+                }
+            }
+        }
+    };
+
     #[cfg(all(not(feature = "usb_log"), not(feature = "_no_usb")))]
-    let background_task = join(ble_task(runner), usb_device.run());
+    let background_task = join(ble_task(runner), usb_task);
     #[cfg(all(feature = "usb_log", not(feature = "_no_usb")))]
     let background_task = join(
         ble_task(runner),
         select(
-            usb_device.run(),
+            usb_task,
             embassy_usb_logger::with_class!(1024, log::LevelFilter::Debug, usb_logger),
         ),
     );

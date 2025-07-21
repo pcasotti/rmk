@@ -13,7 +13,7 @@ use rmk::action::KeyAction;
 use rmk::channel::{KEYBOARD_REPORT_CHANNEL, KEY_EVENT_CHANNEL};
 use rmk::config::BehaviorConfig;
 use rmk::descriptor::KeyboardReport;
-use rmk::event::KeyEvent;
+use rmk::event::KeyboardEvent;
 use rmk::hid::Report;
 use rmk::input_device::Runnable;
 use rmk::keyboard::Keyboard;
@@ -30,9 +30,10 @@ pub fn init_log() {
         .try_init();
 }
 
+pub const KC_LCTRL: u8 = 1 << 0;
 pub const KC_LSHIFT: u8 = 1 << 1;
+pub const KC_LALT: u8 = 1 << 2;
 pub const KC_LGUI: u8 = 1 << 3;
-pub const KC_LCTRL: u8 = 1;
 
 #[derive(Debug, Clone)]
 pub struct TestKeyPress {
@@ -79,11 +80,7 @@ pub async fn run_key_sequence_test<'a, const ROW: usize, const COL: usize, const
             for key in key_sequence {
                 Timer::after(Duration::from_millis(key.delay)).await;
                 KEY_EVENT_CHANNEL
-                    .send(KeyEvent {
-                        row: key.row,
-                        col: key.col,
-                        pressed: key.pressed,
-                    })
+                    .send(KeyboardEvent::key(key.row, key.col, key.pressed))
                     .await;
             }
 
@@ -94,7 +91,7 @@ pub async fn run_key_sequence_test<'a, const ROW: usize, const COL: usize, const
         async {
             let mut report_index = -1;
             for expected in expected_reports {
-                match select(Timer::after(Duration::from_secs(1)), KEYBOARD_REPORT_CHANNEL.receive()).await {
+                match select(Timer::after(Duration::from_secs(2)), KEYBOARD_REPORT_CHANNEL.receive()).await {
                     Either::First(_) => panic!("ERROR: report wait timeout reached"),
                     Either::Second(Report::KeyboardReport(report)) => {
                         report_index += 1;

@@ -129,18 +129,18 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
     async fn process(&mut self, event: Event) -> ProcessResult {
         match event {
             Event::Battery(val) => {
-                let battery_percent = self.get_battery_percent(val);
-
-                trace!("Detected battery ADC value: {:?} ({:?}%)", val, battery_percent);
-
-                #[cfg(feature = "controller")]
-                send_controller_event(&mut self.controller_pub, ControllerEvent::Battery(battery_percent));
+                trace!("Detected battery ADC value: {:?}", val);
 
                 #[cfg(feature = "_ble")]
                 {
                     let current_value =
                         crate::ble::trouble::battery_service::BATTERY_LEVEL.load(core::sync::atomic::Ordering::Relaxed);
                     if current_value < 100 || current_value == 255 {
+                        let battery_percent = self.get_battery_percent(val);
+
+                        #[cfg(feature = "controller")]
+                        send_controller_event(&mut self.controller_pub, ControllerEvent::Battery(battery_percent));
+
                         // When charging, don't update the battery level(which is inaccurate)
                         crate::ble::trouble::battery_service::BATTERY_LEVEL
                             .store(battery_percent, core::sync::atomic::Ordering::Relaxed);
@@ -151,11 +151,11 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             Event::ChargingState(charging) => {
                 info!("Charging state changed: {:?}", charging);
 
-                #[cfg(feature = "controller")]
-                send_controller_event(&mut self.controller_pub, ControllerEvent::ChargingState(charging));
-
                 #[cfg(feature = "_ble")]
                 {
+                    #[cfg(feature = "controller")]
+                    send_controller_event(&mut self.controller_pub, ControllerEvent::ChargingState(charging));
+
                     if charging {
                         crate::ble::trouble::battery_service::BATTERY_LEVEL
                             .store(101, core::sync::atomic::Ordering::Relaxed);
