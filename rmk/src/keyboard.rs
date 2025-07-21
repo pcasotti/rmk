@@ -1164,6 +1164,9 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             self.process_user(key, key_event).await;
         } else if key.is_basic() {
             self.process_basic(key, key_event).await;
+        } else if key.is_macro() {
+            // Process macro
+            self.process_action_macro(key, key_event).await;
         } else if key.is_combo() {
             self.process_action_combo(key, key_event).await;
         } else if key.is_boot() {
@@ -1262,11 +1265,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
             _ => key,
         };
 
-        if key.is_macro() {
-            self.process_action_macro(key, key_event).await;
-        } else {
-            self.process_action_keycode(key, key_event).await;
-        }
+        self.process_action_keycode(key, key_event).await;
         self.update_osm(key_event);
         self.update_osl(key_event);
     }
@@ -1619,7 +1618,7 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
         }
     }
 
-    async fn execute_macro(&mut self, macro_idx: u8, mut key_event: KeyEvent) {
+    async fn execute_macro(&mut self, macro_idx: u8, key_event: KeyEvent) {
         // Execute the macro only when releasing the key
         if key_event.pressed {
             return;
@@ -1636,21 +1635,21 @@ impl<'a, const ROW: usize, const COL: usize, const NUM_LAYER: usize, const NUM_E
                 match operation {
                     MacroOperation::Press(k) => {
                         self.macro_texting = false;
-                        key_event.pressed = true;
-                        self.process_action_keycode(k, key_event).await;
+                        self.register_key(k, key_event);
+                        self.send_keyboard_report_with_resolved_modifiers(true).await;
                     }
                     MacroOperation::Release(k) => {
                         self.macro_texting = false;
-                        key_event.pressed = false;
-                        self.process_action_keycode(k, key_event).await;
+                        self.unregister_key(k, key_event);
+                        self.send_keyboard_report_with_resolved_modifiers(false).await;
                     }
                     MacroOperation::Tap(k) => {
                         self.macro_texting = false;
                         self.register_key(k, key_event);
                         self.send_keyboard_report_with_resolved_modifiers(true).await;
                         embassy_time::Timer::after_millis(2).await;
-                        key_event.pressed = false;
-                        self.process_action_keycode(k, key_event).await;
+                        self.unregister_key(k, key_event);
+                        self.send_keyboard_report_with_resolved_modifiers(false).await;
                     }
                     MacroOperation::Text(k, is_cap) => {
                         self.macro_texting = true;
