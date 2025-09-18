@@ -9,6 +9,8 @@ pub(crate) mod wpm;
 
 use embassy_futures::select::{Either, select};
 
+pub mod display;
+
 /// Common trait for controllers.
 pub trait Controller {
     /// Type of the received events
