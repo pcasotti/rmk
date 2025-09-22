@@ -2,6 +2,8 @@
 //!
 //! This module provides keycode definitions following the USB HID
 //! specification, extended with additional codes
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
 use strum::{EnumIter, FromRepr};
 
 use crate::modifier::ModifierCombination;
@@ -9,7 +11,7 @@ use crate::modifier::ModifierCombination;
 /// KeyCode is the internal representation of all keycodes, keyboard operations, etc.
 /// Use flat representation of keycodes.
 #[repr(u16)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, FromRepr, EnumIter)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, FromRepr, EnumIter, Serialize, Deserialize, Schema)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum KeyCode {
     /// Reserved, no-key.

@@ -48,6 +48,7 @@ byteorder = { version = "1", default-features = false }
 ssmarshal = { version = "1.0", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive"] }
 postcard = { version = "1", features = ["experimental-derive"] }
+postcard-rpc = "0.11.15"
 
 # Used in macro
 paste = "1"

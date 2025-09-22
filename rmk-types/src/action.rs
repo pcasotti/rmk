@@ -9,6 +9,9 @@
 //! - [`KeyAction`] - Complex behaviors that keyboards should behave
 //! - [`EncoderAction`] - Rotary encoder actions
 
+use postcard_schema::Schema;
+use serde::{Deserialize, Serialize};
+
 use crate::keycode::KeyCode;
 use crate::modifier::ModifierCombination;
 
@@ -76,7 +79,7 @@ pub enum MorseMode {
 
 /// Configuration for morse, tap dance and tap-hold
 /// to save some RAM space, manually packed into 32 bits
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize, Schema)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct MorseProfile(u32);
 
@@ -111,7 +114,7 @@ impl MorseProfile {
     ///   the hold action of current morse key will be triggered
     ///   https://docs.qmk.fm/tap_hold#tap-or-hold-decision-modes
     /// - if hold_on_other_press is set - triggers hold immediately if any other non-morse
-    ///   key is pressed while the current morse key is held    
+    ///   key is pressed while the current morse key is held
     pub fn mode(self) -> Option<MorseMode> {
         match self.0 & 0xC000_0000 {
             0xC000_0000 => Some(MorseMode::Normal),
@@ -215,7 +218,7 @@ impl Into<u32> for MorseProfile {
 
 /// A KeyAction is the action at a keyboard position, stored in keymap.
 /// It can be a single action like triggering a key, or a composite keyboard action like tap/hold
-#[derive(Debug, Copy, Clone, Eq)]
+#[derive(Debug, Copy, Clone, Eq, Serialize, Deserialize, Schema)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum KeyAction {
     /// No action. Serialized as 0x0000.
@@ -226,7 +229,7 @@ pub enum KeyAction {
     Single(Action),
     /// Don't wait the release of the key, auto-release after a time threshold.
     Tap(Action),
-    /// Tap hold action    
+    /// Tap hold action
     TapHold(Action, Action, MorseProfile),
 
     /// Morse action, references a morse configuration by index.
@@ -271,7 +274,7 @@ impl PartialEq for KeyAction {
 }
 
 /// A single basic action that a keyboard can execute.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Schema)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Action {
     /// Default action, no action.

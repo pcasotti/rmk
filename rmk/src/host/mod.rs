@@ -1,6 +1,7 @@
 #[cfg(feature = "storage")]
 pub(crate) mod storage;
 pub mod via;
+pub mod rmk_rpc;
 
 use core::cell::RefCell;
 
@@ -11,6 +12,7 @@ pub(crate) use via::VialService as HostService;
 use crate::config::VialConfig;
 use crate::descriptor::ViaReport;
 use crate::hid::{HidReaderTrait, HidWriterTrait};
+use crate::host::rmk_rpc::{RmkRpcReport, RmkRpcService};
 use crate::keymap::KeyMap;
 
 #[cfg(feature = "vial")]
@@ -27,6 +29,21 @@ pub(crate) async fn run_host_communicate_task<
     vial_config: VialConfig<'static>,
 ) {
     let mut service = HostService::new(keymap, vial_config, reader_writer);
+    service.run().await
+}
+
+pub(crate) async fn run_rpc_communicate_task<
+    'a,
+    Rw: HidReaderTrait<ReportType = RmkRpcReport> + HidWriterTrait<ReportType = RmkRpcReport>,
+    const ROW: usize,
+    const COL: usize,
+    const NUM_LAYER: usize,
+    const NUM_ENCODER: usize,
+>(
+    keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
+    reader_writer: Rw,
+) {
+    let mut service = RmkRpcService::new(keymap, reader_writer);
     service.run().await
 }
 

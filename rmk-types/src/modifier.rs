@@ -7,12 +7,12 @@ use core::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
 
 use bitfield_struct::bitfield;
 use postcard::experimental::max_size::MaxSize;
+use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
 /// The bit representation of the modifier combination.
 #[bitfield(u8, order = Lsb, defmt = cfg(feature = "defmt"))]
-#[derive(Serialize, Deserialize, MaxSize, Eq, PartialEq)]
-
+#[derive(Serialize, Deserialize, MaxSize, Eq, PartialEq, Schema)]
 pub struct ModifierCombination {
     #[bits(1)]
     pub left_ctrl: bool,

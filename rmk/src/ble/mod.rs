@@ -45,7 +45,10 @@ use crate::ble::led::BleLedReader;
 use crate::ble::profile::{ProfileInfo, ProfileManager, UPDATED_CCCD_TABLE, UPDATED_PROFILE};
 use crate::channel::{KEYBOARD_REPORT_CHANNEL, LED_SIGNAL};
 use crate::config::RmkConfig;
+#[cfg(feature = "host")]
+use crate::hid::{HidReaderTrait, HidWriterTrait};
 use crate::hid::{DummyWriter, RunnableHidWriter};
+use crate::host::rmk_rpc::{RmkRpcReport, UsbRmkRpcReaderWriter};
 #[cfg(feature = "split")]
 use crate::split::ble::central::CENTRAL_SLEEP;
 use crate::state::{ConnectionState, ConnectionType};
@@ -138,6 +141,8 @@ pub(crate) async fn run_ble<
 
     #[cfg(all(not(feature = "_no_usb"), feature = "host"))]
     let mut host_reader_writer = add_usb_reader_writer!(&mut _usb_builder, ViaReport, 32, 32);
+
+    let mut rpc_reader_writer = add_usb_reader_writer!(&mut _usb_builder, RmkRpcReport, 32, 32);
 
     // Optional usb logger initialization
     #[cfg(all(feature = "usb_log", not(feature = "_no_usb")))]
@@ -288,6 +293,7 @@ pub(crate) async fn run_ble<
                                     keymap,
                                     #[cfg(feature = "host")]
                                     UsbHostReaderWriter::new(&mut host_reader_writer),
+                                    UsbRmkRpcReaderWriter::new(&mut rpc_reader_writer),
                                     #[cfg(feature = "vial")]
                                     rmk_config.vial_config,
                                     USB_SUSPENDED.wait(),
@@ -307,6 +313,7 @@ pub(crate) async fn run_ble<
                                     &stack,
                                     #[cfg(feature = "host")]
                                     keymap,
+                                    UsbRmkRpcReaderWriter::new(&mut rpc_reader_writer),
                                     #[cfg(feature = "host")]
                                     &mut rmk_config,
                                     #[cfg(feature = "storage")]
@@ -348,6 +355,7 @@ pub(crate) async fn run_ble<
                             keymap,
                             #[cfg(feature = "host")]
                             UsbHostReaderWriter::new(&mut host_reader_writer),
+                            UsbRmkRpcReaderWriter::new(&mut rpc_reader_writer),
                             #[cfg(feature = "vial")]
                             rmk_config.vial_config,
                             core::future::pending::<()>(), // Run forever until BLE connected
@@ -364,6 +372,7 @@ pub(crate) async fn run_ble<
                                         &stack,
                                         #[cfg(feature = "host")]
                                         keymap,
+                                        UsbRmkRpcReaderWriter::new(&mut rpc_reader_writer),
                                         #[cfg(feature = "host")]
                                         &mut rmk_config,
                                         #[cfg(feature = "storage")]
@@ -413,6 +422,7 @@ pub(crate) async fn run_ble<
                             &stack,
                             #[cfg(feature = "host")]
                             keymap,
+                            UsbRmkRpcReaderWriter::new(&mut rpc_reader_writer),
                             #[cfg(feature = "host")]
                             &mut rmk_config,
                             #[cfg(feature = "storage")]
@@ -840,6 +850,7 @@ async fn run_ble_keyboard<
     'd,
     C: Controller + ControllerCmdAsync<LeSetPhy> + ControllerCmdSync<LeReadLocalSupportedFeatures>,
     #[cfg(feature = "storage")] F: AsyncNorFlash,
+    #[cfg(feature = "host")] RpcRw: HidReaderTrait<ReportType = RmkRpcReport> + HidWriterTrait<ReportType = RmkRpcReport>,
     #[cfg(any(feature = "storage", feature = "host"))] const ROW: usize,
     #[cfg(any(feature = "storage", feature = "host"))] const COL: usize,
     #[cfg(any(feature = "storage", feature = "host"))] const NUM_LAYER: usize,
@@ -849,6 +860,7 @@ async fn run_ble_keyboard<
     conn: &GattConnection<'a, 'b, DefaultPacketPool>,
     stack: &Stack<'_, C, DefaultPacketPool>,
     #[cfg(feature = "host")] keymap: &'c RefCell<KeyMap<'c, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
+    #[cfg(feature = "host")] rpc_reader_writer: RpcRw,
     #[cfg(feature = "host")] rmk_config: &'d mut RmkConfig<'static>,
     #[cfg(feature = "storage")] storage: &mut Storage<F, ROW, COL, NUM_LAYER, NUM_ENCODER>,
 ) {
@@ -893,6 +905,7 @@ async fn run_ble_keyboard<
         keymap,
         #[cfg(feature = "host")]
         ble_host_server,
+        rpc_reader_writer,
         #[cfg(feature = "vial")]
         rmk_config.vial_config,
         communication_task,

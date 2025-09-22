@@ -61,7 +61,9 @@ pub use {embassy_futures, futures, heapless, rmk_macro as macros, rmk_types as t
 #[cfg(feature = "storage")]
 use {embedded_storage_async::nor_flash::NorFlash as AsyncNorFlash, storage::Storage};
 
-use crate::config::PerKeyConfig;
+use crate::{config::PerKeyConfig, host::{rmk_rpc::UsbRmkRpcReaderWriter, run_rpc_communicate_task}};
+#[cfg(feature = "host")]
+use crate::host::rmk_rpc::RmkRpcReport;
 use crate::keyboard::LOCK_LED_STATES;
 use crate::state::ConnectionState;
 
@@ -264,6 +266,8 @@ pub async fn run_rmk<
         let logger_fut = async {};
         let mut usb_device = usb_builder.build();
 
+        let mut rpc_reader_writer = add_usb_reader_writer!(&mut _usb_builder, RmkRpcReport, 32, 32);
+
         // Run all tasks, if one of them fails, wait 1 second and then restart
         embassy_futures::join::join(logger_fut, async {
             loop {
@@ -292,6 +296,7 @@ pub async fn run_rmk<
                     keymap,
                     #[cfg(feature = "host")]
                     crate::host::UsbHostReaderWriter::new(&mut host_reader_writer),
+                    UsbRmkRpcReaderWriter::new(&mut rpc_reader_writer),
                     #[cfg(feature = "vial")]
                     rmk_config.vial_config,
                     usb_task,
@@ -317,6 +322,7 @@ pub(crate) async fn run_keyboard<
     W: RunnableHidWriter,
     #[cfg(feature = "storage")] F: AsyncNorFlash,
     #[cfg(feature = "host")] Rw: HidReaderTrait<ReportType = ViaReport> + HidWriterTrait<ReportType = ViaReport>,
+    #[cfg(feature = "host")] RpcRw: HidReaderTrait<ReportType = RmkRpcReport> + HidWriterTrait<ReportType = RmkRpcReport>,
     #[cfg(any(feature = "storage", feature = "host"))] const ROW: usize,
     #[cfg(any(feature = "storage", feature = "host"))] const COL: usize,
     #[cfg(any(feature = "storage", feature = "host"))] const NUM_LAYER: usize,
@@ -327,6 +333,7 @@ pub(crate) async fn run_keyboard<
     // #[cfg(feature = "host")] host_task: impl Future<Output = ()>,
     #[cfg(feature = "host")] keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
     #[cfg(feature = "host")] reader_writer: Rw,
+    #[cfg(feature = "host")] rpc_reader_writer: RpcRw,
     #[cfg(feature = "vial")] vial_config: VialConfig<'static>,
     communication_fut: impl Future<Output = ()>,
     mut led_reader: R,
@@ -360,6 +367,7 @@ pub(crate) async fn run_keyboard<
             }
         }
     };
+    let rpc_fut = run_rpc_communicate_task(keymap, rpc_reader_writer);
     #[cfg(feature = "host")]
     let host_fut = run_host_communicate_task(keymap, reader_writer, vial_config);
     #[cfg(feature = "storage")]
@@ -372,6 +380,7 @@ pub(crate) async fn run_keyboard<
     let storage_task = core::pin::pin!(storage_fut.fuse());
     #[cfg(feature = "host")]
     let host_task = core::pin::pin!(host_fut.fuse());
+    let mut rpc_task = core::pin::pin!(rpc_fut.fuse());
     let mut communication_task = core::pin::pin!(communication_fut.fuse());
     let mut led_task = core::pin::pin!(led_fut.fuse());
     let mut writer_task = core::pin::pin!(writer_fut.fuse());
@@ -383,6 +392,7 @@ pub(crate) async fn run_keyboard<
         _ = led_task => error!("Led task has ended"),
         _ = with_feature!("host", host_task) => error!("Host task ended"),
         _ = writer_task => error!("Writer task has ended"),
+        _ = rpc_task => error!("Rmk rpc task has ended"),
     };
 
     CONNECTION_STATE.store(ConnectionState::Disconnected.into(), Ordering::Release);
