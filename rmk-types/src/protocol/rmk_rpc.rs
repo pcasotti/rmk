@@ -1,4 +1,3 @@
-use postcard_rpc::endpoint;
 use postcard_schema::Schema;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +42,3 @@ impl Endpoint for GetActiveLayer {
     type Response = u8;
     const KEY: u8 = 0x02;
 }
-
-// endpoint!(GetKeyAction, KeyActionPos, Result<KeyAction, KeyActionError>);
-// endpoint!(SetKeyAction, (KeyActionPos, KeyAction), Result<(), KeyActionError>);

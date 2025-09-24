@@ -19,6 +19,7 @@ mod split;
 use darling::FromMeta;
 use darling::ast::NestedMeta;
 use proc_macro::TokenStream;
+use quote::quote;
 use split::peripheral::parse_split_peripheral_mod;
 use syn::parse_macro_input;
 
@@ -61,4 +62,64 @@ pub fn rmk_peripheral(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     parse_split_peripheral_mod(peripheral_id, attr, item_mod).into()
+}
+
+struct DispatchMapping {
+    endpoint: syn::Type,
+    _eq: syn::Token![=],
+    handler: syn::Ident,
+}
+
+impl syn::parse::Parse for DispatchMapping {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        Ok(DispatchMapping {
+            endpoint: input.parse()?,
+            _eq: input.parse()?,
+            handler: input.parse()?,
+        })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn dispatcher(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mappings = parse_macro_input!(attr with syn::punctuated::Punctuated::<DispatchMapping, syn::Token![;]>::parse_terminated);
+
+    let struct_item = parse_macro_input!(item as syn::ItemStruct);
+    let struct_name = &struct_item.ident;
+    let (impl_generics, ty_generics, where_clause) = struct_item.generics.split_for_impl();
+
+    let match_arms = mappings.iter().map(|mapping| {
+        let endpoint_type = &mapping.endpoint;
+        let handler_ident = &mapping.handler;
+
+        quote! {
+            <#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::KEY => {
+                let request = ::postcard::from_bytes::<<#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::Request>(&data[1..])?;
+                let response = self.#handler_ident(request).await;
+                ::postcard::to_slice(&response, &mut buf[1..])?;
+            }
+        }
+    });
+
+    let expanded = quote! {
+        #struct_item
+
+        impl #impl_generics #struct_name #ty_generics #where_clause {
+            async fn handle(&mut self, data: &[u8; 32]) -> ::postcard::Result<[u8; 32]> {
+                let mut buf = [0; 32];
+                let key = data[0];
+                buf[0] = key;
+                match key {
+                    #(#match_arms)*
+                    _ => {
+                        info!("Unknown cmd: {:?}", data);
+                        return Err(::postcard::Error::DeserializeBadEncoding);
+                    }
+                }
+                Ok(buf)
+            }
+        }
+    };
+
+    expanded.into()
 }

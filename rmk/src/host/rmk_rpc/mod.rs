@@ -1,41 +1,36 @@
 use core::cell::RefCell;
 
+use rmk_macro::dispatcher;
 use usbd_hid::descriptor::generator_prelude::*;
 use embassy_time::Timer;
 use embassy_usb::{class::hid::HidReaderWriter, driver::Driver};
-use rmk_types::{action::KeyAction, protocol::rmk_rpc::{Endpoint, GetActiveLayer, GetKeyAction, SetKeyAction}};
+use rmk_types::{protocol::rmk_rpc::{Endpoint, GetActiveLayer, GetKeyAction, SetKeyAction}};
 use serde::Serialize;
 use usbd_hid::descriptor::AsInputReport;
 
 use crate::{event::{KeyPos, KeyboardEventPos}, hid::{HidError, HidReaderTrait, HidWriterTrait}, keymap::KeyMap, state::{ConnectionState, CONNECTION_STATE}};
 
-macro_rules! link_handlers {
-    (
-        $($endpoint:ty, $handler:ident;)*
-    ) => {
-        async fn handle(&mut self, data: &[u8; 32]) -> [u8; 32] {
-            let mut buf = [0; 32];
-            let key = data[0];
-            buf[0] = key;
-            match key {
-                $(
-                    <$endpoint as Endpoint>::KEY => {
-                        let request = postcard::from_bytes::<<$endpoint as Endpoint>::Request>(&data[1..]).unwrap();
-                        let response = self.$handler(request).await;
-                        postcard::to_slice(&response, &mut buf[1..]);
-                    }
-                )*
-                _ => {
-                    info!("Unknown cmd: {:?}", data);
-                }
-            }
-            buf
-        }
-    };
-}
-
 pub(crate) trait Dispatcher {
     async fn handle(&mut self, data: &[u8; 32]) -> [u8; 32];
+}
+
+#[derive(PartialEq, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum RmkRpcError {
+    HidError(HidError),
+    PostcardError(postcard::Error),
+}
+
+impl From<HidError> for RmkRpcError {
+    fn from(value: HidError) -> Self {
+        Self::HidError(value)
+    }
+}
+
+impl From<postcard::Error> for RmkRpcError {
+    fn from(value: postcard::Error) -> Self {
+        Self::PostcardError(value)
+    }
 }
 
 #[gen_hid_descriptor(
@@ -49,6 +44,11 @@ pub struct RmkRpcReport {
     pub output: [u8; 32],
 }
 
+#[dispatcher(
+    GetKeyAction = get_key_action_handler;
+    SetKeyAction = set_key_action_handler;
+    GetActiveLayer = get_active_layer_handler;
+)]
 pub(crate) struct RmkRpcService<
     'a,
     RW: HidWriterTrait<ReportType = RmkRpcReport> + HidReaderTrait<ReportType = RmkRpcReport>,
@@ -62,21 +62,6 @@ pub(crate) struct RmkRpcService<
 
     // Usb vial hid reader writer
     pub(crate) reader_writer: RW,
-}
-
-impl<
-    'a,
-    RW: HidWriterTrait<ReportType = RmkRpcReport> + HidReaderTrait<ReportType = RmkRpcReport>,
-    const ROW: usize,
-    const COL: usize,
-    const NUM_LAYER: usize,
-    const NUM_ENCODER: usize,
-> Dispatcher for RmkRpcService<'a, RW, ROW, COL, NUM_LAYER, NUM_ENCODER> {
-    link_handlers! {
-        GetKeyAction, get_key_action_handler;
-        SetKeyAction, set_key_action_handler;
-        GetActiveLayer, get_active_layer_handler;
-    }
 }
 
 impl<
@@ -114,23 +99,20 @@ impl<
         }
     }
 
-    pub(crate) async fn process(&mut self) -> Result<(), HidError> {
+    pub(crate) async fn process(&mut self) -> Result<(), RmkRpcError> {
         let mut report = self.reader_writer.read_report().await?;
-        debug!("processing rmk rpc report: {:?}", report.output);
-        report.input = self.handle(&report.output).await;
+        report.input = self.handle(&report.output).await?;
         self.reader_writer.write_report(report).await?;
 
         Ok(())
     }
 
     async fn get_key_action_handler(&mut self, request: <GetKeyAction as Endpoint>::Request) -> <GetKeyAction as Endpoint>::Response {
-        debug!("rpc request: {:?}", request);
         let pos = KeyboardEventPos::Key(KeyPos {
             row: request.row,
             col: request.col,
         });
         let response = Ok(self.keymap.borrow().get_action_at(pos, request.layer as usize));
-        debug!("rpc response: {:?}", response);
         response
     }
 
@@ -143,7 +125,7 @@ impl<
         Ok(())
     }
 
-    async fn get_active_layer_handler(&mut self, request: <GetActiveLayer as Endpoint>::Request) -> <GetActiveLayer as Endpoint>::Response {
+    async fn get_active_layer_handler(&mut self, _request: <GetActiveLayer as Endpoint>::Request) -> <GetActiveLayer as Endpoint>::Response {
         self.keymap.borrow().get_activated_layer()
     }
 }
