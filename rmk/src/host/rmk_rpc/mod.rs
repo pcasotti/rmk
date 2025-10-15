@@ -4,15 +4,11 @@ use rmk_macro::dispatcher;
 use usbd_hid::descriptor::generator_prelude::*;
 use embassy_time::Timer;
 use embassy_usb::{class::hid::HidReaderWriter, driver::Driver};
-use rmk_types::{protocol::rmk_rpc::{Endpoint, GetActiveLayer, GetKeyAction, SetKeyAction}};
+use rmk_types::protocol::rmk_rpc::{Endpoint, GetActiveLayer, GetKeyAction, SetKeyAction};
 use serde::Serialize;
 use usbd_hid::descriptor::AsInputReport;
 
 use crate::{event::{KeyPos, KeyboardEventPos}, hid::{HidError, HidReaderTrait, HidWriterTrait}, keymap::KeyMap, state::{ConnectionState, CONNECTION_STATE}};
-
-pub(crate) trait Dispatcher {
-    async fn handle(&mut self, data: &[u8; 32]) -> [u8; 32];
-}
 
 #[derive(PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -57,10 +53,7 @@ pub(crate) struct RmkRpcService<
     const NUM_LAYER: usize,
     const NUM_ENCODER: usize,
 > {
-    // Reference of keymap, for updating
     keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
-
-    // Usb vial hid reader writer
     pub(crate) reader_writer: RW,
 }
 

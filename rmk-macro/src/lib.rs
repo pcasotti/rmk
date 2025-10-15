@@ -82,7 +82,8 @@ impl syn::parse::Parse for DispatchMapping {
 
 #[proc_macro_attribute]
 pub fn dispatcher(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mappings = parse_macro_input!(attr with syn::punctuated::Punctuated::<DispatchMapping, syn::Token![;]>::parse_terminated);
+    let mappings =
+        parse_macro_input!(attr with syn::punctuated::Punctuated::<DispatchMapping, syn::Token![;]>::parse_terminated);
 
     let struct_item = parse_macro_input!(item as syn::ItemStruct);
     let struct_name = &struct_item.ident;
@@ -93,10 +94,12 @@ pub fn dispatcher(attr: TokenStream, item: TokenStream) -> TokenStream {
         let handler_ident = &mapping.handler;
 
         quote! {
-            <#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::KEY => {
-                let request = ::postcard::from_bytes::<<#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::Request>(&data[1..])?;
+            <#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::REQ_KEY => {
+                header.key = <#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::RESP_KEY;
+                ::postcard::to_slice(&header, &mut buf[1..])?;
+                let request = ::postcard::from_bytes::<<#endpoint_type as ::rmk_types::protocol::rmk_rpc::Endpoint>::Request>(&data[::rmk_types::protocol::rmk_rpc::Header::SIZE..])?;
                 let response = self.#handler_ident(request).await;
-                ::postcard::to_slice(&response, &mut buf[1..])?;
+                ::postcard::to_slice(&response, &mut buf[::rmk_types::protocol::rmk_rpc::Header::SIZE+1..])?;
             }
         }
     });
@@ -107,9 +110,8 @@ pub fn dispatcher(attr: TokenStream, item: TokenStream) -> TokenStream {
         impl #impl_generics #struct_name #ty_generics #where_clause {
             async fn handle(&mut self, data: &[u8; 32]) -> ::postcard::Result<[u8; 32]> {
                 let mut buf = [0; 32];
-                let key = data[0];
-                buf[0] = key;
-                match key {
+                let mut header = ::postcard::from_bytes::<::rmk_types::protocol::rmk_rpc::Header>(&data[..::rmk_types::protocol::rmk_rpc::Header::SIZE])?;
+                match header.key {
                     #(#match_arms)*
                     _ => {
                         info!("Unknown cmd: {:?}", data);
