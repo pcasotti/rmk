@@ -1,7 +1,7 @@
+pub mod rmk_rpc;
 #[cfg(feature = "storage")]
 pub(crate) mod storage;
 pub mod via;
-pub mod rmk_rpc;
 
 use core::cell::RefCell;
 

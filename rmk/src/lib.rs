@@ -61,11 +61,14 @@ pub use {embassy_futures, futures, heapless, rmk_macro as macros, rmk_types as t
 #[cfg(feature = "storage")]
 use {embedded_storage_async::nor_flash::NorFlash as AsyncNorFlash, storage::Storage};
 
-use crate::{config::PerKeyConfig, host::{rmk_rpc::UsbRmkRpcReaderWriter, run_rpc_communicate_task}};
 #[cfg(feature = "host")]
 use crate::host::rmk_rpc::RmkRpcReport;
 use crate::keyboard::LOCK_LED_STATES;
 use crate::state::ConnectionState;
+use crate::{
+    config::PerKeyConfig,
+    host::{rmk_rpc::UsbRmkRpcReaderWriter, run_rpc_communicate_task},
+};
 
 #[cfg(feature = "bidirectional")]
 pub mod bidirectional_matrix;

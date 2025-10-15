@@ -45,9 +45,9 @@ use crate::ble::led::BleLedReader;
 use crate::ble::profile::{ProfileInfo, ProfileManager, UPDATED_CCCD_TABLE, UPDATED_PROFILE};
 use crate::channel::{KEYBOARD_REPORT_CHANNEL, LED_SIGNAL};
 use crate::config::RmkConfig;
+use crate::hid::{DummyWriter, RunnableHidWriter};
 #[cfg(feature = "host")]
 use crate::hid::{HidReaderTrait, HidWriterTrait};
-use crate::hid::{DummyWriter, RunnableHidWriter};
 use crate::host::rmk_rpc::{RmkRpcReport, UsbRmkRpcReaderWriter};
 #[cfg(feature = "split")]
 use crate::split::ble::central::CENTRAL_SLEEP;

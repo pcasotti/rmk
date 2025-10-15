@@ -1,14 +1,19 @@
 use core::cell::RefCell;
 
-use rmk_macro::dispatcher;
-use usbd_hid::descriptor::generator_prelude::*;
 use embassy_time::Timer;
 use embassy_usb::{class::hid::HidReaderWriter, driver::Driver};
+use rmk_macro::dispatcher;
 use rmk_types::protocol::rmk_rpc::{Endpoint, GetActiveLayer, GetKeyAction, SetKeyAction};
 use serde::Serialize;
 use usbd_hid::descriptor::AsInputReport;
+use usbd_hid::descriptor::generator_prelude::*;
 
-use crate::{event::{KeyPos, KeyboardEventPos}, hid::{HidError, HidReaderTrait, HidWriterTrait}, keymap::KeyMap, state::{ConnectionState, CONNECTION_STATE}};
+use crate::{
+    event::{KeyPos, KeyboardEventPos},
+    hid::{HidError, HidReaderTrait, HidWriterTrait},
+    keymap::KeyMap,
+    state::{CONNECTION_STATE, ConnectionState},
+};
 
 #[derive(PartialEq, Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -66,14 +71,8 @@ impl<
     const NUM_ENCODER: usize,
 > RmkRpcService<'a, RW, ROW, COL, NUM_LAYER, NUM_ENCODER>
 {
-    pub(crate) fn new(
-        keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>,
-        reader_writer: RW,
-    ) -> Self {
-        Self {
-            keymap,
-            reader_writer,
-        }
+    pub(crate) fn new(keymap: &'a RefCell<KeyMap<'a, ROW, COL, NUM_LAYER, NUM_ENCODER>>, reader_writer: RW) -> Self {
+        Self { keymap, reader_writer }
     }
 
     pub(crate) async fn run(&mut self) {
@@ -100,7 +99,10 @@ impl<
         Ok(())
     }
 
-    async fn get_key_action_handler(&mut self, request: <GetKeyAction as Endpoint>::Request) -> <GetKeyAction as Endpoint>::Response {
+    async fn get_key_action_handler(
+        &mut self,
+        request: <GetKeyAction as Endpoint>::Request,
+    ) -> <GetKeyAction as Endpoint>::Response {
         let pos = KeyboardEventPos::Key(KeyPos {
             row: request.row,
             col: request.col,
@@ -109,16 +111,24 @@ impl<
         response
     }
 
-    async fn set_key_action_handler(&mut self, request: <SetKeyAction as Endpoint>::Request) -> <SetKeyAction as Endpoint>::Response {
+    async fn set_key_action_handler(
+        &mut self,
+        request: <SetKeyAction as Endpoint>::Request,
+    ) -> <SetKeyAction as Endpoint>::Response {
         let pos = KeyboardEventPos::Key(KeyPos {
             row: request.0.row,
             col: request.0.col,
         });
-        self.keymap.borrow_mut().set_action_at(pos, request.0.layer as usize, request.1);
+        self.keymap
+            .borrow_mut()
+            .set_action_at(pos, request.0.layer as usize, request.1);
         Ok(())
     }
 
-    async fn get_active_layer_handler(&mut self, _request: <GetActiveLayer as Endpoint>::Request) -> <GetActiveLayer as Endpoint>::Response {
+    async fn get_active_layer_handler(
+        &mut self,
+        _request: <GetActiveLayer as Endpoint>::Request,
+    ) -> <GetActiveLayer as Endpoint>::Response {
         self.keymap.borrow().get_activated_layer()
     }
 }
@@ -129,7 +139,9 @@ pub struct UsbRmkRpcReaderWriter<'a, 'd, D: Driver<'d>> {
 
 impl<'a, 'd, D: Driver<'d>> UsbRmkRpcReaderWriter<'a, 'd, D> {
     pub(crate) fn new(reader_writer: &'a mut HidReaderWriter<'d, D, 32, 32>) -> Self {
-        Self { reader_writer: reader_writer }
+        Self {
+            reader_writer: reader_writer,
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 use postcard::experimental::max_size::MaxSize;
 use postcard_schema::Schema;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::action::KeyAction;
 
@@ -39,9 +39,9 @@ macro_rules! endpoint {
     };
 }
 
-endpoint!(GetActiveLayer, (),                        u8);
-endpoint!(GetKeyAction,   KeyActionPos,              Result<KeyAction, KeyActionError>);
-endpoint!(SetKeyAction,   (KeyActionPos, KeyAction), Result<(), KeyActionError>);
+endpoint!(GetActiveLayer, (), u8);
+endpoint!(GetKeyAction, KeyActionPos, Result<KeyAction, KeyActionError>);
+endpoint!(SetKeyAction, (KeyActionPos, KeyAction), Result<(), KeyActionError>);
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Schema, MaxSize)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

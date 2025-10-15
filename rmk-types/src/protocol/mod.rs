@@ -5,5 +5,5 @@
 //!
 //! - [`vial`] - Vial protocol implementation
 
-pub mod vial;
 pub mod rmk_rpc;
+pub mod vial;
